@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+  background-image: radial-gradient(circle at 12% 0%, rgba(125, 211, 252, 0.22), transparent 28%),
+    radial-gradient(circle at 88% 4%, rgba(186, 230, 253, 0.26), transparent 30%);
+}
+
+::selection {
+  @apply bg-sky-200 text-slate-900;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.panel {
+  @apply rounded-2xl border border-slate-200 bg-white p-4;
+}
+
+.panel h2 {
+  @apply m-0 text-base font-semibold text-slate-900;
+}
+
+.muted {
+  @apply mt-2 text-xs text-slate-500;
+}
+
+.maskCanvasStack {
+  @apply relative mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white;
+}
+
+.maskCanvasStack canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+
+.imageCanvas {
+  position: relative;
+  z-index: 1;
+}
+
+.maskCanvas {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  opacity: 0.45;
+  cursor: crosshair;
+}
