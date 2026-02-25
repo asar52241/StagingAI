@@ -12,6 +12,10 @@ body {
   padding: 0;
 }
 
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Sora', Inter, sans-serif;
+}
+
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
   background-image: radial-gradient(circle at 12% 0%, rgba(125, 211, 252, 0.22), transparent 28%),
