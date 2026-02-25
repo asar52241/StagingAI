@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Pill, PillIndicator } from "@/components/ui/pill";
+import { AccordionFeatureSection } from "@/components/blocks/accordion-feature-section";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -879,95 +880,34 @@ export default function LandingPage() {
 
         {/* ── Features ── */}
         <section className="mt-24">
-          <div className="overflow-hidden rounded-3xl bg-[#0f1121] p-8 sm:p-10 lg:p-12">
-            <div className="grid gap-10 lg:grid-cols-[1fr_1.3fr] lg:gap-8">
-              {/* Left */}
-              <div className="flex flex-col justify-center">
-                <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-1 text-xs font-semibold text-white/70">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5 text-emerald-400" aria-hidden>
-                    <path d="M12 4l1.7 3.9L17.6 9l-3.9 1.7L12 14.6l-1.7-3.9L6.4 9l3.9-1.1L12 4z" strokeLinejoin="round" />
-                  </svg>
-                  AI-подготовка фото
-                </span>
-
-                <h2 className="mt-5 text-3xl font-extrabold tracking-tight text-white sm:text-4xl lg:text-[2.6rem] lg:leading-[1.15]">
-                Подготовьте фото к публикации{" "}
-                  <span className="text-emerald-400">за 15 секунд</span>
-                </h2>
-
-                <div className="mt-8">
-                  <Link
-                    href="/studio"
-                    className="inline-flex items-center justify-center rounded-full bg-blue-600 px-6 py-3.5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-blue-500"
-                  >
-                    Загрузить фото
-                  </Link>
-                  <p className="mt-3 text-xs text-white/40">Без регистрации · Без карты</p>
-                </div>
-              </div>
-
-              {/* Right — 2×2 cards */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {[
-                  {
-                    icon: (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5" aria-hidden>
-                        <path d="M4.8 18.8a3.8 3.8 0 005.4 0l8.1-8.1a2.5 2.5 0 10-3.5-3.5l-8.1 8.1a3.8 3.8 0 000 5.4z" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    ),
-                    title: "Просто",
-                    body: (
-                      <>Проведите кистью по лишним предметам — <strong className="text-white">остальное сделает AI</strong></>
-                    ),
-                  },
-                  {
-                    icon: (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5" aria-hidden>
-                        <circle cx="12" cy="12" r="9" />
-                        <path d="M12 7v5l3 3" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    ),
-                    title: "Мгновенно",
-                    body: (
-                      <>Готовое фото за <strong className="text-white">15 секунд</strong></>
-                    ),
-                  },
-                  {
-                    icon: (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5" aria-hidden>
-                        <rect x="2" y="6" width="20" height="13" rx="2" />
-                        <path d="M16 6V5a3 3 0 00-6 0v1" strokeLinecap="round" />
-                      </svg>
-                    ),
-                    title: "Доступно",
-                    body: (
-                      <>Дешевле, чем услуги дизайнера</>
-                    ),
-                  },
-                  {
-                    icon: (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5" aria-hidden>
-                        <path d="M4 12a8 8 0 0114.93-4M20 12a8 8 0 01-14.93 4" strokeLinecap="round" />
-                        <path d="M19 4v4h-4M5 20v-4h4" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    ),
-                    title: "Без ограничений",
-                    body: (
-                      <>Делайте сколько угодно проходов — <strong className="text-white">результат улучшается с каждым разом</strong></>
-                    ),
-                  },
-                ].map(({ icon, title, body }) => (
-                  <div key={title} className="rounded-2xl border border-white/8 bg-white/5 p-5">
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-400/10 text-emerald-400">
-                      {icon}
-                    </span>
-                    <h3 className="mt-3 text-base font-bold text-white">{title}</h3>
-                    <p className="mt-1.5 text-sm leading-relaxed text-white/55">{body}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <AccordionFeatureSection
+            features={[
+              {
+                id: 1,
+                title: "Просто",
+                description: "Проведите кистью по лишним предметам — остальное сделает AI. Не нужен Photoshop или специальные навыки.",
+                image: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=900&q=80",
+              },
+              {
+                id: 2,
+                title: "Мгновенно",
+                description: "Готовое фото за 15 секунд. Нейросеть обрабатывает снимок прямо в браузере — без ожидания и очередей.",
+                image: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=900&q=80",
+              },
+              {
+                id: 3,
+                title: "Доступно",
+                description: "Дешевле, чем услуги дизайнера или фотографа. Первые 10 обработок бесплатно — без карты.",
+                image: "https://images.unsplash.com/photo-1484154218962-a197022b5858?w=900&q=80",
+              },
+              {
+                id: 4,
+                title: "Без ограничений",
+                description: "Делайте сколько угодно проходов — результат улучшается с каждым разом. Точный контроль через ручную маску.",
+                image: "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=900&q=80",
+              },
+            ]}
+          />
         </section>
 
 
