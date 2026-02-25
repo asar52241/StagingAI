@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { Pill, PillIndicator } from "@/components/ui/pill";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -807,19 +808,13 @@ export default function LandingPage() {
               </p>
 
               {/* Mini trust signals */}
-              <div className="mt-8 flex flex-wrap items-center gap-4 text-xs text-gray-400">
-                <span className="flex items-center gap-1.5">
-                  <CheckIcon className="h-3.5 w-3.5 text-emerald-500" />
-                  Бесплатный старт
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <CheckIcon className="h-3.5 w-3.5 text-emerald-500" />
-                  Без установки
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <CheckIcon className="h-3.5 w-3.5 text-emerald-500" />
-                  Результат за 15 сек
-                </span>
+              <div className="mt-8 flex flex-wrap items-center gap-2">
+                {["Бесплатный старт", "Без установки", "Результат за 15 сек"].map((label) => (
+                  <Pill key={label} variant="secondary">
+                    <PillIndicator variant="success" />
+                    {label}
+                  </Pill>
+                ))}
               </div>
             </div>
 
