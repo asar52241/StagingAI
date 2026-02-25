@@ -506,13 +506,11 @@ function BeforeAfterSlider({
 function StatsBar() {
   return (
     <div className="rounded-3xl border border-gray-200 bg-white shadow-sm">
-      <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 lg:grid-cols-4 lg:divide-y-0">
-        {stats.map((stat, i) => (
+      <div className="grid grid-cols-3 divide-x divide-gray-100">
+        {stats.map((stat) => (
           <div
             key={stat.label}
-            className={`flex flex-col items-center px-6 py-6 text-center ${
-              i === 0 ? "rounded-tl-3xl" : ""
-            } ${i === stats.length - 1 ? "rounded-br-3xl lg:rounded-bl-none lg:rounded-tr-3xl" : ""}`}
+            className="flex flex-col items-center px-6 py-6 text-center"
           >
             <span className="text-3xl font-extrabold tracking-tight text-gray-900">
               {stat.value}
