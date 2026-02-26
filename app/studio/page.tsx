@@ -377,7 +377,19 @@ export default function StudioPage() {
       formData.append("quality", "high");
       if (batchMode === "manual" && photo.maskFile) formData.append("mask", photo.maskFile);
 
-      const response = await fetch("/api/declutter", { method: "POST", body: formData });
+      const abortCtrl = new AbortController();
+      const abortTimer = setTimeout(() => abortCtrl.abort(), 5 * 60 * 1000);
+      let response: Response;
+      try {
+        response = await fetch("/api/declutter", { method: "POST", body: formData, signal: abortCtrl.signal });
+      } catch (fetchErr) {
+        if (fetchErr instanceof Error && fetchErr.name === "AbortError") {
+          throw new Error("Превышен лимит ожидания (5 мин). Попробуйте ещё раз.");
+        }
+        throw fetchErr;
+      } finally {
+        clearTimeout(abortTimer);
+      }
       if (!response.ok) throw new Error(await parseDeclutterError(response));
 
       const mime       = response.headers.get("Content-Type") ?? "image/png";

@@ -56,32 +56,32 @@ const steps: Step[] = [
     id: "01",
     title: "Загрузите фото",
     description:
-      "Добавьте снимок с телефона или компьютера — мы автоматически подготовим его к обработке",
-    hint: "Поддержка JPG, PNG, WEBP, GIF",
+      "Добавьте снимок с телефона или компьютера — мы автоматически подготовим его к обработке.",
+    hint: "JPG · PNG · WEBP · GIF",
     icon: "upload",
   },
   {
     id: "02",
-    title: "Отметьте лишние предметы",
+    title: "Отметьте лишнее",
     description:
-      "Проведите кистью по мебели или предметам, которые нужно убрать. Вы сами контролируете результат",
-    hint: "Точное удаление без артефактов",
+      "Проведите кистью по мебели или предметам. Вы сами контролируете область удаления.",
+    hint: "Ручная маска",
     icon: "brush",
   },
   {
     id: "03",
-    title: "Получите чистое фото",
+    title: "AI обрабатывает",
     description:
-      "Нейросеть аккуратно удалит объекты и восстановит фон без искажений",
-    hint: "Обычно 5–15 секунд",
+      "Нейросеть аккуратно удаляет объекты и восстанавливает фон без артефактов и искажений.",
+    hint: "~15 секунд",
     icon: "spark",
   },
   {
     id: "04",
-    title: "Публикуйте объявление",
+    title: "Публикуйте",
     description:
-      "",
-    hint: "Подходит для любых листингов",
+      "Скачайте готовое фото в высоком разрешении. Подходит для любых листингов и платформ.",
+    hint: "PNG экспорт",
     icon: "send",
   },
 ];
@@ -529,30 +529,30 @@ function StatsBar() {
 
 function StepCard({ step }: { step: Step }) {
   return (
-    <article className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-gray-200 bg-gray-50 text-gray-700">
-          <StepIcon icon={step.icon} />
-        </div>
-        <h3 className="text-base font-bold tracking-tight text-gray-900">
-          {step.title}
-        </h3>
+    <article className="flex flex-col bg-gray-50 p-7">
+      <span
+        className="select-none text-[72px] font-black leading-none tracking-tighter text-gray-200"
+        aria-hidden
+      >
+        {step.id}
+      </span>
+
+      <div className="mt-5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm text-gray-600">
+        <StepIcon icon={step.icon} />
       </div>
-      <p className="mt-3 text-sm leading-relaxed text-gray-600">
+
+      <h3 className="mt-5 text-base font-bold tracking-tight text-gray-900">
+        {step.title}
+      </h3>
+      <p className="mt-2 flex-1 text-sm leading-relaxed text-gray-500">
         {step.description}
       </p>
-      <p className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-600">
-        <svg
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          className="h-3 w-3"
-          aria-hidden
-        >
-          <circle cx="12" cy="12" r="9" opacity="0.15" />
-          <circle cx="12" cy="12" r="4" />
-        </svg>
-        {step.hint}
-      </p>
+
+      <div className="mt-5">
+        <span className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-600 shadow-sm">
+          {step.hint}
+        </span>
+      </div>
     </article>
   );
 }
@@ -850,10 +850,12 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {steps.map((step) => (
-              <StepCard key={step.id} step={step} />
-            ))}
+          <div className="overflow-hidden rounded-3xl border border-gray-200 shadow-sm">
+            <div className="grid gap-px bg-gray-200 md:grid-cols-2 xl:grid-cols-4">
+              {steps.map((step) => (
+                <StepCard key={step.id} step={step} />
+              ))}
+            </div>
           </div>
         </section>
 
