@@ -46,7 +46,7 @@ type FaqItem = {
 
 const stats = [
   { value: "500+", label: "брокеров и агентов пользуются сервисом ежедневно" },
-  { value: "15 сек", label: "среднее время обработки" },
+  { value: "~1 мин", label: "среднее время обработки" },
   { value: "95%", label: "пользователей довольны результатом" },
 ];
 
@@ -72,7 +72,7 @@ const steps: Step[] = [
     title: "AI обрабатывает",
     description:
       "Нейросеть аккуратно удаляет объекты и восстанавливает фон без артефактов и искажений.",
-    hint: "~15 секунд",
+    hint: "~1 минута",
     icon: "spark",
   },
   {
@@ -179,7 +179,7 @@ const faqItems: FaqItem[] = [
   {
     question: "Сколько длится обработка одного фото?",
     answer:
-      "Обычно от 5 до 15 секунд. Для сложных зон можно сделать дополнительный проход.",
+      "Обычно около 1 минуты. Для сложных зон можно сделать дополнительный проход.",
   },
   {
     question: "Можно ли использовать на мобильном?",
@@ -791,7 +791,7 @@ export default function LandingPage() {
               <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl lg:text-[3.5rem] lg:leading-[1.1]">
                 Уберите лишнее с&nbsp;фото
                 <br />
-                <span className="text-blue-600">за секунды</span>
+                <span className="text-blue-600">за ~1 минуту</span>
               </h1>
 
               <p className="mt-5 max-w-xl text-lg leading-relaxed text-gray-500">
@@ -816,7 +816,7 @@ export default function LandingPage() {
 
               {/* Mini trust signals */}
               <div className="mt-8 flex flex-wrap items-center gap-2">
-                {["Бесплатный старт", "Без установки", "Результат за 15 сек"].map((label) => (
+                {["Без установки", "Результат за ~1 мин", "Без регистрации"].map((label) => (
                   <Pill key={label} variant="secondary">
                     <PillIndicator variant="success" />
                     {label}
@@ -889,10 +889,10 @@ export default function LandingPage() {
         {/* ── Features CTA ── */}
         <section className="mt-24 overflow-hidden rounded-3xl border border-gray-200 bg-gray-50 px-6 py-16 text-center sm:px-12">
           <h2 className="mx-auto max-w-3xl text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">
-            Подготовьте фото за 15 секунд
+            Подготовьте фото за ~1 минуту
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-base text-gray-500">
-            Без регистрации. Без карты. Первые 10 обработок — бесплатно.
+            Без регистрации. Без карты.
           </p>
 
           <div className="mt-8">
@@ -903,7 +903,7 @@ export default function LandingPage() {
               Попробовать бесплатно
             </Link>
             <p className="mt-3 text-xs text-gray-400">
-              Бесплатный старт · Без установки · Результат за 15 сек
+              Без установки · Без регистрации · Результат за ~1 мин
             </p>
           </div>
 
@@ -911,7 +911,7 @@ export default function LandingPage() {
             <div className="grid gap-px bg-gray-200 md:grid-cols-2 xl:grid-cols-4">
               {[
                 { emoji: "✨", title: "Просто", desc: "Кисть по объекту — остальное делает AI. Без Photoshop." },
-                { emoji: "⚡", title: "Мгновенно", desc: "Готовое фото за 15 секунд. Без ожидания и очереди." },
+                { emoji: "⚡", title: "Быстро", desc: "Готовое фото примерно за 1 минуту. Без ожидания и очереди." },
                 { emoji: "💎", title: "Доступно", desc: "Дешевле, чем услуги дизайнера в десятки раз." },
                 { emoji: "🎯", title: "Точное удаление", desc: "AI удаляет только то, что вы отметили — фон остаётся нетронутым." },
               ].map((f) => (
@@ -937,7 +937,7 @@ export default function LandingPage() {
               Для одного и для команды
             </h2>
             <p className="mt-3 max-w-2xl text-lg text-gray-500">
-              Первые 10 обработок — бесплатно. Без карты.
+              Без карты. Попробуйте прямо сейчас.
             </p>
           </div>
 
@@ -1007,7 +1007,7 @@ export default function LandingPage() {
             </div>
 
             <p className="mt-5 text-xs text-gray-500">
-              Первые 10 обработок бесплатно · Без карты · Результат за 15 секунд
+              Без карты · Результат за ~1 мин
             </p>
           </div>
         </section>
