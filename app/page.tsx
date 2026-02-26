@@ -527,18 +527,25 @@ function StatsBar() {
 
 // ─── Step Card ────────────────────────────────────────────────────────────────
 
+const STEP_EMOJI: Record<Step["icon"], string> = {
+  upload: "🗂️",
+  brush: "✏️",
+  spark: "⚡",
+  send: "🚀",
+};
+
 function StepCard({ step }: { step: Step }) {
   return (
-    <article className="flex flex-col bg-gray-50 p-7">
+    <article className="group flex flex-col bg-gray-50 p-7 transition-colors duration-200 hover:bg-white">
       <span
-        className="select-none text-[72px] font-black leading-none tracking-tighter text-gray-200"
+        className="select-none text-[72px] font-black leading-none tracking-tighter text-gray-200 transition-colors duration-200 group-hover:text-gray-100"
         aria-hidden
       >
         {step.id}
       </span>
 
-      <div className="mt-5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-gray-200 bg-white shadow-sm text-gray-600">
-        <StepIcon icon={step.icon} />
+      <div className="mt-5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-gray-200 bg-white text-xl shadow-sm transition-shadow duration-200 group-hover:shadow-md">
+        {STEP_EMOJI[step.icon]}
       </div>
 
       <h3 className="mt-5 text-base font-bold tracking-tight text-gray-900">
@@ -549,7 +556,7 @@ function StepCard({ step }: { step: Step }) {
       </p>
 
       <div className="mt-5">
-        <span className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-600 shadow-sm">
+        <span className="inline-flex items-center rounded-full border border-gray-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-gray-600 shadow-sm transition-shadow duration-200 group-hover:shadow-md">
           {step.hint}
         </span>
       </div>
