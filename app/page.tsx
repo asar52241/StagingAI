@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Pill, PillIndicator } from "@/components/ui/pill";
+import { FloatingNav } from "@/components/ui/floating-navbar";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -822,9 +823,18 @@ function PriceCalculator() {
 
 // ─── Landing Page ─────────────────────────────────────────────────────────────
 
+const floatingNavItems = [
+  { name: "Как работает", link: "#how" },
+  { name: "Примеры", link: "#cases" },
+  { name: "Режимы", link: "#modes" },
+  { name: "Тарифы", link: "#pricing" },
+  { name: "FAQ", link: "#faq" },
+];
+
 export default function LandingPage() {
   return (
     <div className="bg-white text-gray-900">
+      <FloatingNav navItems={floatingNavItems} />
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-gray-100 bg-white/80 backdrop-blur-md">
         <nav className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
@@ -982,7 +992,7 @@ export default function LandingPage() {
         </section>
 
         {/* ── Features CTA ── */}
-        <section className="mt-24 overflow-hidden rounded-3xl border border-gray-200 bg-gray-50 px-6 py-16 text-center sm:px-12">
+        <section id="modes" className="mt-24 overflow-hidden rounded-3xl border border-gray-200 bg-gray-50 px-6 py-16 text-center sm:px-12">
           <h2 className="mx-auto max-w-3xl text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">
             Подготовьте фото за ~1 минуту
           </h2>
