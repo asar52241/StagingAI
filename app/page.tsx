@@ -737,7 +737,7 @@ export default function LandingPage() {
             href="#hero"
             className="text-sm font-extrabold tracking-[0.18em] text-gray-900"
           >
-            DECLUTTER AI
+            StagingAI
           </a>
 
           <div className="hidden items-center gap-6 text-sm text-gray-500 md:flex">
@@ -1016,7 +1016,7 @@ export default function LandingPage() {
       <footer className="mt-16 border-t border-gray-100 bg-white">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-2 px-4 py-6 text-sm text-gray-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <p className="font-semibold tracking-[0.12em] text-gray-900">
-            DECLUTTER AI
+            StagingAI
           </p>
           <p>Визуальная подготовка фото недвижимости для объявлений</p>
           <p>© {new Date().getFullYear()}</p>

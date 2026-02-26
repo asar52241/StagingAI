@@ -4,7 +4,7 @@ import "./globals.css";
 // eslint-disable-next-line @next/next/no-page-custom-font -- loaded in head for all pages
 
 export const metadata: Metadata = {
-  title: "Удаление предметов с фото для недвижимости",
+  title: "StagingAI — удаление предметов с фото для недвижимости",
   description:
     "Онлайн-инструмент для агентов и брокеров: уберите мебель и лишние вещи с фото комнаты и подготовьте кадр для объявления.",
 };

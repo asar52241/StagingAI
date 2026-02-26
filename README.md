@@ -1,4 +1,4 @@
-# AI Declutter MVP
+# StagingAI
 
 Mask-based inpainting tool for real-estate photos.
 
