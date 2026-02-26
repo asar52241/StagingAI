@@ -1029,7 +1029,7 @@ export default function LandingPage() {
               Тарифы
             </p>
             <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl">
-              Для одного и для команды
+              Платите за результат
             </h2>
             <p className="mt-3 max-w-2xl text-lg text-gray-500">
               Без карты. Попробуйте прямо сейчас.
