@@ -28,15 +28,6 @@ type Testimonial = {
   avatar: string;
 };
 
-type Plan = {
-  name: string;
-  price: string;
-  cadence: string;
-  features: string[];
-  cta: string;
-  highlighted?: boolean;
-};
-
 type FaqItem = {
   question: string;
   answer: string;
@@ -122,46 +113,6 @@ const testimonials: Testimonial[] = [
     role: "Брокер, Prime Listing",
     avatar:
       "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=160&q=80",
-  },
-];
-
-const plans: Plan[] = [
-  {
-    name: "Free",
-    price: "0 ₽",
-    cadence: "/ 7 дней",
-    features: [
-      "До 10 обработок",
-      "Ручная маска",
-      "Экспорт PNG",
-      "Базовая поддержка",
-    ],
-    cta: "Начать бесплатно",
-  },
-  {
-    name: "Pro",
-    price: "3 900 ₽",
-    cadence: "/ месяц",
-    features: [
-      "До 500 обработок",
-      "Авто + ручной режим",
-      "Приоритетная скорость",
-      "Командный доступ до 3 пользователей",
-    ],
-    cta: "Выбрать Pro",
-    highlighted: true,
-  },
-  {
-    name: "Агентство",
-    price: "11 900 ₽",
-    cadence: "/ месяц",
-    features: [
-      "Безлимитные обработки",
-      "До 15 пользователей",
-      "Приоритетная поддержка",
-      "Единый биллинг для офиса",
-    ],
-    cta: "Связаться с нами",
   },
 ];
 
@@ -635,60 +586,6 @@ function TestimonialCard({ item }: { item: Testimonial }) {
   );
 }
 
-// ─── Pricing Card ─────────────────────────────────────────────────────────────
-
-function PricingCard({ plan }: { plan: Plan }) {
-  const highlighted = !!plan.highlighted;
-
-  return (
-    <article
-      className={`relative rounded-3xl border p-6 shadow-sm ${
-        highlighted
-          ? "border-blue-300 bg-white shadow-[0_12px_32px_rgba(37,99,235,0.10)]"
-          : "border-gray-200 bg-white"
-      }`}
-    >
-      {highlighted && (
-        <span className="absolute -top-3.5 left-6 rounded-full bg-blue-600 px-3.5 py-1 text-xs font-bold uppercase tracking-wide text-white">
-          Популярный
-        </span>
-      )}
-
-      <h3 className="text-base font-bold text-gray-900">{plan.name}</h3>
-      <div className="mt-3 flex items-baseline gap-1">
-        <span className="text-4xl font-extrabold tracking-tight text-gray-900">
-          {plan.price}
-        </span>
-        <span className="text-sm text-gray-400">{plan.cadence}</span>
-      </div>
-
-      <ul className="mt-5 space-y-2.5">
-        {plan.features.map((f) => (
-          <li key={f} className="flex items-start gap-2 text-sm text-gray-600">
-            <span
-              className={`mt-0.5 ${highlighted ? "text-blue-600" : "text-gray-400"}`}
-            >
-              <CheckIcon />
-            </span>
-            {f}
-          </li>
-        ))}
-      </ul>
-
-      <Link
-        href="/studio"
-        className={`mt-6 inline-flex w-full items-center justify-center rounded-full px-4 py-3 text-sm font-semibold transition hover:-translate-y-0.5 ${
-          highlighted
-            ? "bg-gray-900 text-white ring-4 ring-blue-100 hover:bg-gray-800"
-            : "border border-gray-200 bg-white text-gray-800 hover:border-gray-900 hover:text-gray-900"
-        }`}
-      >
-        {plan.cta}
-      </Link>
-    </article>
-  );
-}
-
 // ─── FAQ Item ─────────────────────────────────────────────────────────────────
 
 function FaqItem({ item }: { item: FaqItem }) {
@@ -1137,12 +1034,6 @@ export default function LandingPage() {
             <p className="mt-3 max-w-2xl text-lg text-gray-500">
               Без карты. Попробуйте прямо сейчас.
             </p>
-          </div>
-
-          <div className="grid gap-5 lg:grid-cols-3">
-            {plans.map((plan) => (
-              <PricingCard key={plan.name} plan={plan} />
-            ))}
           </div>
 
           <PriceCalculator />
