@@ -725,6 +725,204 @@ function FaqItem({ item }: { item: FaqItem }) {
   );
 }
 
+// ─── Price Calculator ─────────────────────────────────────────────────────────
+/*
+ * Pricing algorithm: DP — minimum-cost combination of packages + штучные фото.
+ *
+ * Packages: 10=450 ₽, 15=700 ₽, 20=950 ₽, 30=1400 ₽  |  штучно: 50 ₽/фото
+ *
+ * Examples:
+ *   N=3  → 3×50 = 150 ₽              (штучно, скидок нет, минимум)
+ *   N=10 → пакет 10 = 450 ₽          (экономия 50 ₽ vs 500 ₽ штучно)
+ *   N=12 → пакет 10 + 2×50 = 550 ₽   (экономия 50 ₽ vs 600 ₽ штучно)
+ *   N=30 → 3×(пакет 10) = 1350 ₽     (экономия 150 ₽; пакет 30=1400 ₽ дороже)
+ */
+const CALC_PKGS = [
+  { n: 30, p: 1400 },
+  { n: 20, p: 950 },
+  { n: 15, p: 700 },
+  { n: 10, p: 450 },
+] as const;
+
+function calcMinPrice(photos: number): number {
+  // dp[i] = min cost for exactly i photos
+  const dp = new Array(photos + 1).fill(Infinity);
+  dp[0] = 0;
+  for (let i = 1; i <= photos; i++) {
+    if (dp[i - 1] < Infinity) dp[i] = Math.min(dp[i], dp[i - 1] + 50);
+    for (const { n, p } of CALC_PKGS) {
+      if (i >= n && dp[i - n] < Infinity) {
+        dp[i] = Math.min(dp[i], dp[i - n] + p);
+      }
+    }
+  }
+  return dp[photos];
+}
+
+function PriceCalculator() {
+  const [count, setCount] = useState(5);
+  const [maxHint, setMaxHint] = useState(false);
+
+  const valid = count >= 3;
+  const basePrice = count * 50;
+  const total = valid ? calcMinPrice(count) : 0;
+  const savings = valid ? Math.max(0, basePrice - total) : 0;
+  const perPhoto = valid ? Math.round((total / count) * 10) / 10 : 50;
+
+  const step = (delta: number) => {
+    setCount((c) => Math.max(1, Math.min(30, c + delta)));
+    setMaxHint(false);
+  };
+
+  const onInput = (e: { target: HTMLInputElement }) => {
+    const v = parseInt(e.target.value, 10);
+    if (isNaN(v) || v < 1) return;
+    if (v > 30) {
+      setCount(30);
+      setMaxHint(true);
+    } else {
+      setCount(v);
+      setMaxHint(false);
+    }
+  };
+
+  return (
+    <div className="mt-8 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
+      <div className="grid gap-px bg-gray-100 sm:grid-cols-[1fr_280px]">
+        {/* ── Controls ── */}
+        <div className="bg-white p-6 sm:p-8">
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-600">
+            Калькулятор
+          </p>
+          <h3 className="mt-1.5 text-xl font-extrabold tracking-tight text-gray-900">
+            Рассчитайте стоимость
+          </h3>
+          <p className="mt-1 text-sm text-gray-400">1 фото = 1 готовый экспорт</p>
+
+          <div className="mt-6 space-y-4">
+            <span className="block text-sm font-semibold text-gray-700">
+              Количество фото
+            </span>
+
+            {/* Stepper */}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => step(-1)}
+                disabled={count <= 1}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 text-xl text-gray-600 transition hover:border-gray-900 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label="Уменьшить"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={count}
+                onChange={onInput}
+                className="h-10 w-16 rounded-xl border border-gray-200 text-center text-lg font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+              <button
+                type="button"
+                onClick={() => step(1)}
+                disabled={count >= 30}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gray-200 text-xl text-gray-600 transition hover:border-gray-900 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-30"
+                aria-label="Увеличить"
+              >
+                +
+              </button>
+            </div>
+
+            {/* Slider */}
+            <input
+              type="range"
+              min={1}
+              max={30}
+              value={count}
+              onChange={(e) => {
+                setCount(Number(e.target.value));
+                setMaxHint(false);
+              }}
+              className="w-full accent-blue-600"
+              aria-label="Количество фото"
+            />
+
+            {/* Hints */}
+            {count < 3 && (
+              <div className="flex items-center gap-1.5 rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs font-medium text-amber-700">
+                <InfoIcon />
+                Минимум 3 фото = 150 ₽
+              </div>
+            )}
+            {maxHint && (
+              <div className="flex items-center gap-1.5 rounded-xl bg-blue-50 px-3.5 py-2.5 text-xs font-medium text-blue-700">
+                <InfoIcon />
+                Максимум за один заказ — 30 фото
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Result ── */}
+        <div className="flex flex-col justify-between bg-gray-50 p-6 sm:p-8">
+          {valid ? (
+            <>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                  Итого
+                </p>
+                <p className="mt-1 text-4xl font-extrabold tracking-tight text-gray-900">
+                  {total.toLocaleString("ru-RU")} ₽
+                </p>
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Эффективно</span>
+                    <span className="font-semibold text-gray-900">
+                      {perPhoto} ₽/фото
+                    </span>
+                  </div>
+                  {savings > 0 && (
+                    <>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-gray-500">Экономия</span>
+                        <span className="font-semibold text-green-600">
+                          −{savings} ₽
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-gray-400">
+                        <span>vs штучно</span>
+                        <span className="line-through">{basePrice} ₽</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+              <Link
+                href="/studio"
+                className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-gray-900 px-4 py-3 text-sm font-bold text-white ring-4 ring-gray-100 transition hover:-translate-y-0.5 hover:bg-gray-800"
+              >
+                Начать обработку
+              </Link>
+            </>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-3 py-4 text-center">
+              <p className="text-4xl font-extrabold text-gray-200">— ₽</p>
+              <p className="text-sm text-gray-400">Выберите от 3 фото</p>
+              <button
+                disabled
+                className="mt-2 inline-flex w-full cursor-not-allowed items-center justify-center rounded-full bg-gray-100 px-4 py-3 text-sm font-bold text-gray-400"
+              >
+                Начать обработку
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Landing Page ─────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
@@ -946,6 +1144,8 @@ export default function LandingPage() {
               <PricingCard key={plan.name} plan={plan} />
             ))}
           </div>
+
+          <PriceCalculator />
         </section>
 
         {/* ── FAQ ── */}
