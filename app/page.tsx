@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Pill, PillIndicator } from "@/components/ui/pill";
-import { AccordionFeatureSection } from "@/components/blocks/accordion-feature-section";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -887,36 +886,43 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ── Features ── */}
-        <section className="mt-24">
-          <AccordionFeatureSection
-            features={[
-              {
-                id: 1,
-                title: "Просто",
-                description: "Проведите кистью по лишним предметам — остальное сделает AI. Не нужен Photoshop или специальные навыки.",
-                image: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=900&q=80",
-              },
-              {
-                id: 2,
-                title: "Мгновенно",
-                description: "Готовое фото за 15 секунд. Нейросеть обрабатывает снимок прямо в браузере — без ожидания и очередей.",
-                image: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=900&q=80",
-              },
-              {
-                id: 3,
-                title: "Доступно",
-                description: "Дешевле, чем услуги дизайнера или фотографа. Первые 10 обработок бесплатно — без карты.",
-                image: "https://images.unsplash.com/photo-1484154218962-a197022b5858?w=900&q=80",
-              },
-              {
-                id: 4,
-                title: "Без ограничений",
-                description: "Делайте сколько угодно проходов — результат улучшается с каждым разом. Точный контроль через ручную маску.",
-                image: "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=900&q=80",
-              },
-            ]}
-          />
+        {/* ── Features CTA ── */}
+        <section className="mt-24 overflow-hidden rounded-3xl border border-gray-200 bg-gray-50 px-6 py-16 text-center sm:px-12">
+          <h2 className="mx-auto max-w-3xl text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl">
+            Подготовьте фото за 15 секунд
+          </h2>
+          <p className="mx-auto mt-4 max-w-xl text-base text-gray-500">
+            Без регистрации. Без карты. Первые 10 обработок — бесплатно.
+          </p>
+
+          <div className="mt-8">
+            <Link
+              href="/studio"
+              className="inline-flex items-center justify-center rounded-full bg-blue-600 px-8 py-4 text-sm font-bold text-white shadow-lg shadow-blue-100 transition hover:-translate-y-0.5 hover:bg-blue-700"
+            >
+              Попробовать бесплатно
+            </Link>
+            <p className="mt-3 text-xs text-gray-400">
+              Бесплатный старт · Без установки · Результат за 15 сек
+            </p>
+          </div>
+
+          <div className="mt-12 overflow-hidden rounded-2xl border border-gray-200 shadow-sm">
+            <div className="grid gap-px bg-gray-200 md:grid-cols-2 xl:grid-cols-4">
+              {[
+                { emoji: "✨", title: "Просто", desc: "Кисть по объекту — остальное делает AI. Без Photoshop." },
+                { emoji: "⚡", title: "Мгновенно", desc: "Готовое фото за 15 секунд. Без ожидания и очереди." },
+                { emoji: "💎", title: "Доступно", desc: "Дешевле, чем услуги дизайнера в десятки раз." },
+                { emoji: "🎯", title: "Точное удаление", desc: "AI удаляет только то, что вы отметили — фон остаётся нетронутым." },
+              ].map((f) => (
+                <div key={f.title} className="bg-white p-6 text-left">
+                  <span className="text-2xl">{f.emoji}</span>
+                  <h3 className="mt-3 text-sm font-bold text-gray-900">{f.title}</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-gray-500">{f.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
 
