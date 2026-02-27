@@ -555,8 +555,8 @@ export async function POST(request: Request) {
     if (!item) {
       return fail(
         502,
-        "OPENAI_EMPTY_RESPONSE",
-        "OpenAI returned an empty image response.",
+        "PROVIDER_EMPTY_RESPONSE",
+        "Image processing service returned an empty response.",
         "error",
       );
     }
@@ -597,10 +597,10 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof OpenAI.APIError) {
-      const providerMessage = error.message || "OpenAI request failed.";
+      const providerMessage = error.message || "Image processing request failed.";
       return fail(
         502,
-        "OPENAI_API_ERROR",
+        "PROVIDER_API_ERROR",
         providerMessage,
         "error",
         undefined,
