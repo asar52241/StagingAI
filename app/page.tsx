@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { LEGAL } from "@/config/legal";
 import { Pill, PillIndicator } from "@/components/ui/pill";
 import { FloatingNav } from "@/components/ui/floating-navbar";
 
@@ -1115,12 +1116,59 @@ export default function LandingPage() {
       </main>
 
       <footer className="mt-16 border-t border-gray-100 bg-white">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-2 px-4 py-6 text-sm text-gray-400 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <p className="font-semibold tracking-[0.12em] text-gray-900">
-            StagingAI
-          </p>
-          <p>Визуальная подготовка фото недвижимости для объявлений</p>
-          <p>© {new Date().getFullYear()}</p>
+        <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          {/* Top row */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-extrabold tracking-[0.14em] text-gray-900">
+                {LEGAL.brandName}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">
+                Визуальная подготовка фото недвижимости для объявлений
+              </p>
+            </div>
+            {/* Legal links */}
+            <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-gray-400">
+              <Link href="/offer" className="transition hover:text-gray-700">
+                Публичная оферта
+              </Link>
+              <Link href="/privacy" className="transition hover:text-gray-700">
+                Политика конфиденциальности
+              </Link>
+              <Link href="/refund" className="transition hover:text-gray-700">
+                Возврат
+              </Link>
+              <Link href="/contacts" className="transition hover:text-gray-700">
+                Контакты
+              </Link>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="mt-6 border-t border-gray-100 pt-4">
+            <div className="flex flex-col gap-1 text-xs text-gray-400 sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                {LEGAL.sellerType} {LEGAL.sellerName} · ИНН&nbsp;{LEGAL.sellerInn} · г.&nbsp;{LEGAL.sellerCity}
+              </p>
+              <div className="flex items-center gap-4">
+                <a
+                  href={`mailto:${LEGAL.email}`}
+                  className="transition hover:text-gray-700"
+                >
+                  {LEGAL.email}
+                </a>
+                <a
+                  href={`tel:${LEGAL.phone.replace(/\D/g, "")}`}
+                  className="transition hover:text-gray-700"
+                >
+                  {LEGAL.phone}
+                </a>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-gray-400">
+              © {new Date().getFullYear()} {LEGAL.brandName}
+            </p>
+          </div>
         </div>
       </footer>
     </div>

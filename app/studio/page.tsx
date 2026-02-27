@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import { LEGAL } from "@/config/legal";
 import MaskEditor, {
   MaskEditorHandle,
   MaskToolMode,
@@ -166,6 +167,8 @@ export default function StudioPage() {
   const [maskCanUndo, setMaskCanUndo]     = useState(false);
   const [maskCanRedo, setMaskCanRedo]     = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showConsentModal, setShowConsentModal] = useState(false);
+  const [consentChecked, setConsentChecked]     = useState(false);
   const maskEditorRef = useRef<MaskEditorHandle | null>(null);
 
   // ── URL cleanup ───────────────────────────────────────────────────────────────
@@ -415,11 +418,18 @@ export default function StudioPage() {
     }
   };
 
-  const handlePay = async () => {
+  const handlePay = () => {
     if (ctaState !== "ready") return;
+    // Show consent modal before processing
+    setConsentChecked(false);
+    setShowConsentModal(true);
+  };
+
+  const handleConfirmConsent = async () => {
+    if (!consentChecked) return;
+    setShowConsentModal(false);
     const toProcess = photos.filter((p) => p.status === "ready" || p.status === "masked");
     if (!toProcess.length) return;
-
     setIsPaid(true);
     setIsProcessing(true);
     for (const photo of toProcess) await processPhoto(photo, mode);
@@ -886,6 +896,71 @@ export default function StudioPage() {
 
         </div>
       </div>
+
+      {/* ── Consent modal ── */}
+      {showConsentModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowConsentModal(false); }}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 className="text-lg font-bold text-gray-900">Перед оформлением заказа</h2>
+            <p className="mt-2 text-sm text-gray-500">
+              Нажимая «Подтвердить», вы подтверждаете, что ознакомились с условиями
+              и даёте своё согласие.
+            </p>
+
+            <label className="mt-5 flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={consentChecked}
+                onChange={(e) => setConsentChecked(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-700">
+                Я принимаю условия{" "}
+                <Link
+                  href="/offer"
+                  target="_blank"
+                  className="text-blue-600 underline"
+                >
+                  Публичной оферты
+                </Link>{" "}
+                и даю согласие на обработку персональных данных в соответствии
+                с{" "}
+                <Link
+                  href="/privacy"
+                  target="_blank"
+                  className="text-blue-600 underline"
+                >
+                  Политикой конфиденциальности
+                </Link>
+                .
+              </span>
+            </label>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => setShowConsentModal(false)}
+                className="flex-1 rounded-full border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleConfirmConsent}
+                disabled={!consentChecked}
+                className="flex-1 rounded-full bg-gray-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
+              >
+                Подтвердить и оплатить
+              </button>
+            </div>
+
+            <p className="mt-4 text-center text-xs text-gray-400">
+              {LEGAL.sellerType} {LEGAL.sellerName} · ИНН {LEGAL.sellerInn}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
