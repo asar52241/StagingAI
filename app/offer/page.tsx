@@ -210,11 +210,6 @@ export default function OfferPage() {
         <a href={`mailto:${LEGAL.email}`} className="text-blue-600 underline">
           {LEGAL.email}
         </a>
-        <br />
-        Телефон:{" "}
-        <a href={`tel:${LEGAL.phone.replace(/\D/g, "")}`} className="text-blue-600 underline">
-          {LEGAL.phone}
-        </a>
       </p>
 
       <p className="mt-10 border-t border-gray-200 pt-4 text-xs text-gray-400">

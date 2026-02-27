@@ -32,21 +32,6 @@ export default function ContactsPage() {
           </div>
         </div>
 
-        <div className="flex items-start gap-3">
-          <span className="mt-0.5 text-lg">📞</span>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-              Телефон
-            </p>
-            <a
-              href={`tel:${LEGAL.phone.replace(/\D/g, "")}`}
-              className="text-base font-medium text-blue-600 hover:underline"
-            >
-              {LEGAL.phone}
-            </a>
-          </div>
-        </div>
-
         {LEGAL.telegram && (
           <div className="flex items-start gap-3">
             <span className="mt-0.5 text-lg">💬</span>

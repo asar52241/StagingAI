@@ -1157,12 +1157,6 @@ export default function LandingPage() {
                 >
                   {LEGAL.email}
                 </a>
-                <a
-                  href={`tel:${LEGAL.phone.replace(/\D/g, "")}`}
-                  className="transition hover:text-gray-700"
-                >
-                  {LEGAL.phone}
-                </a>
               </div>
             </div>
             <p className="mt-2 text-xs text-gray-400">
