@@ -13,6 +13,8 @@ module.exports = {
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
+        brand: 'hsl(var(--brand))',
+        'brand-foreground': 'hsl(var(--brand-foreground))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
@@ -46,6 +48,20 @@ module.exports = {
       backgroundImage: {
         "hero-mesh":
           "radial-gradient(1200px 420px at 0% -10%, rgba(14, 165, 233, 0.14), transparent 55%), radial-gradient(900px 340px at 100% -20%, rgba(56, 189, 248, 0.16), transparent 58%)",
+      },
+      keyframes: {
+        appear: {
+          "0%": { opacity: "0", transform: "translateY(10px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "appear-zoom": {
+          "0%": { opacity: "0", transform: "scale(0.95)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+      },
+      animation: {
+        appear: "appear 0.5s ease-out forwards",
+        "appear-zoom": "appear-zoom 0.5s ease-out forwards",
       },
     },
   },

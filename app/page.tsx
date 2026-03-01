@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { LEGAL } from "@/config/legal";
-import { Pill, PillIndicator } from "@/components/ui/pill";
 import { FloatingNav } from "@/components/ui/floating-navbar";
+import { HeroSection } from "@/components/ui/hero-section";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -359,99 +359,6 @@ function InfoIcon() {
       <circle cx="12" cy="12" r="9" />
       <path d="M12 8v.01M12 11v5" strokeLinecap="round" />
     </svg>
-  );
-}
-
-// ─── Before/After Slider ──────────────────────────────────────────────────────
-
-type BeforeAfterSliderProps = {
-  beforeSrc: string;
-  afterSrc: string;
-  beforeAlt: string;
-  afterAlt: string;
-  id?: string;
-};
-
-function BeforeAfterSlider({
-  beforeSrc,
-  afterSrc,
-  beforeAlt,
-  afterAlt,
-  id,
-}: BeforeAfterSliderProps) {
-  const [position, setPosition] = useState(52);
-
-  return (
-    <div
-      id={id}
-      className="relative overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-[0_4px_24px_rgba(0,0,0,0.06)]"
-    >
-      <div className="relative aspect-[4/3]">
-        <img
-          src={beforeSrc}
-          alt={beforeAlt}
-          className="h-full w-full object-cover"
-          loading="lazy"
-        />
-        <div
-          className="absolute inset-0 overflow-hidden"
-          style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
-        >
-          <img
-            src={afterSrc}
-            alt={afterAlt}
-            className="h-full w-full object-cover"
-            loading="lazy"
-          />
-        </div>
-
-        <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/65 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
-          До
-        </div>
-        <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-gray-900 backdrop-blur-sm">
-          После
-        </div>
-
-        {/* Divider line */}
-        <div
-          className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/90 shadow-[0_0_8px_rgba(0,0,0,0.3)]"
-          style={{ left: `${position}%` }}
-        />
-        {/* Handle */}
-        <div
-          className="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
-          style={{ left: `${position}%` }}
-        >
-          <div className="grid h-10 w-10 place-items-center rounded-full border-2 border-white bg-gray-900 text-white shadow-lg">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className="h-4 w-4"
-              aria-hidden
-            >
-              <path d="M8 7l-4 5 4 5" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M16 7l4 5-4 5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-        </div>
-
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={position}
-          aria-label="Сравнение до и после"
-          onChange={(e) => setPosition(Number(e.target.value))}
-          className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0"
-        />
-      </div>
-
-      <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-2.5 text-center text-xs text-gray-400">
-        Потяните ползунок для сравнения
-      </div>
-    </div>
   );
 }
 
@@ -875,73 +782,39 @@ export default function LandingPage() {
 
       <main className="mx-auto w-full max-w-7xl px-4 pb-24 sm:px-6 lg:px-8">
         {/* ── Hero ── */}
-        <section
-          id="hero"
-          className="relative pt-12 lg:pt-20"
-        >
-          {/* Mesh gradient blob */}
-          <div
-            className="pointer-events-none absolute -top-12 left-1/2 -z-10 h-[540px] w-full -translate-x-1/2 opacity-60"
-            aria-hidden
-          >
-            <div className="absolute left-0 top-0 h-72 w-72 rounded-full bg-sky-200 blur-3xl" />
-            <div className="absolute right-0 top-10 h-64 w-64 rounded-full bg-blue-100 blur-3xl" />
-          </div>
-
-          <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:gap-16">
-            <div className="flex flex-col justify-center">
-              <span className="inline-flex w-fit rounded-full border border-blue-100 bg-blue-50 px-3.5 py-1 text-xs font-bold uppercase tracking-[0.14em] text-blue-700">
-                AI сервис для недвижимости
-              </span>
-
-              <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-gray-900 sm:text-5xl lg:text-[3.5rem] lg:leading-[1.1]">
-                Уберите лишнее с&nbsp;фото
-                <br />
-                <span className="text-blue-600">за ~1 минуту</span>
-              </h1>
-
-              <p className="mt-5 max-w-xl text-lg leading-relaxed text-gray-500">
-                Отметьте кистью, что убрать — AI сделает чистое фото для
-                объявления.
-              </p>
-
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Link
-                  href="/studio"
-                  className="inline-flex items-center rounded-full bg-gray-900 px-6 py-3.5 text-sm font-bold text-white ring-4 ring-gray-100 transition hover:-translate-y-0.5 hover:bg-gray-800"
-                >
-                  Загрузить фото
-                </Link>
-
-              </div>
-
-              <p className="mt-4 text-xs text-gray-400">
-                Визуальная подготовка фото — помогает показать потенциал
-                помещения без изменения фактических характеристик.
-              </p>
-
-              {/* Mini trust signals */}
-              <div className="mt-8 flex flex-wrap items-center gap-2">
-                {["Без установки", "Результат за ~1 мин", "Без регистрации"].map((label) => (
-                  <Pill key={label} variant="secondary">
-                    <PillIndicator variant="success" />
-                    {label}
-                  </Pill>
-                ))}
-              </div>
-            </div>
-
-            <div className="lg:pt-2">
-              <BeforeAfterSlider
-                id="demo"
-                beforeSrc="/images/hero-before.png"
-                afterSrc="/images/hero-after.png"
-                beforeAlt="Комната до обработки"
-                afterAlt="Комната после обработки"
-              />
-            </div>
-          </div>
-        </section>
+        <HeroSection
+          className="px-0"
+          badge={{
+            text: "AI сервис для недвижимости",
+            action: {
+              text: "Как работает",
+              href: "#how",
+            },
+          }}
+          title="Уберите лишнее с фото за ~1 минуту"
+          description="Отметьте кистью, что убрать — AI сделает чистое фото для объявления."
+          note="Визуальная подготовка фото помогает показать потенциал помещения без изменения фактических характеристик."
+          actions={[
+            {
+              text: "Загрузить фото",
+              href: "/studio",
+              variant: "default",
+            },
+            {
+              text: "Смотреть примеры",
+              href: "#cases",
+              variant: "glow",
+              icon: <PlayIcon />,
+            },
+          ]}
+          comparison={{
+            beforeSrc: "/images/hero-before.png",
+            afterSrc: "/images/hero-after.png",
+            beforeAlt: "Комната до обработки",
+            afterAlt: "Комната после обработки",
+            helperText: "Потяните ползунок для сравнения",
+          }}
+        />
 
         {/* ── Stats ── */}
         <section className="mt-20">
