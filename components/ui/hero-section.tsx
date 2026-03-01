@@ -161,7 +161,10 @@ export function HeroSection({
             </Badge>
           )}
 
-          <h1 className="relative z-10 inline-block animate-appear bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-4xl font-semibold leading-tight text-transparent sm:text-6xl md:text-7xl md:leading-tight">
+          <h1
+            className="relative z-10 inline-block animate-appear bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-4xl font-semibold leading-tight text-transparent sm:text-6xl md:text-7xl md:leading-tight"
+            style={{ fontFamily: "Inter, system-ui, sans-serif" }}
+          >
             {title}
           </h1>
 
