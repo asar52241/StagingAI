@@ -27,7 +27,7 @@ interface HeroProps {
       href: string;
     };
   };
-  title: string;
+  title: ReactNode;
   description: string;
   note?: string;
   actions: HeroAction[];
