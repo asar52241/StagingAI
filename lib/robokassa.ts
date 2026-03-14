@@ -54,3 +54,22 @@ export function buildStatusUrl(invId: number): string {
   });
   return `https://auth.robokassa.ru/Merchant/WebService/Service.asmx/OpStateExt?${params}`;
 }
+
+/** Подписывает токен оплаченного заказа для cookie sa_paid. */
+export function signPaidToken(invId: number, count: number): string {
+  const sig = md5(`${invId}:${count}:${PASS2}`);
+  return `${invId}:${count}:${sig}`;
+}
+
+/** Верифицирует cookie sa_paid. Возвращает {invId, count} или null. */
+export function verifyPaidToken(token: string): { invId: number; count: number } | null {
+  const parts = token.split(":");
+  if (parts.length !== 3) return null;
+  const [invIdStr, countStr, sig] = parts;
+  const invId = parseInt(invIdStr, 10);
+  const count = parseInt(countStr, 10);
+  if (!invId || !count) return null;
+  const expected = md5(`${invId}:${count}:${PASS2}`);
+  if (expected.toLowerCase() !== sig.toLowerCase()) return null;
+  return { invId, count };
+}

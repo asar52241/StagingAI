@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { verifyPaidToken } from "@/lib/robokassa";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -355,6 +356,14 @@ export async function POST(request: Request) {
       "warn",
       { "Retry-After": String(rateLimit.retryAfterSeconds) },
     );
+  }
+
+  // Проверяем оплату
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const saMatch      = cookieHeader.match(/(?:^|;\s*)sa_paid=([^;]+)/);
+  const paidToken    = saMatch ? decodeURIComponent(saMatch[1]) : null;
+  if (!paidToken || !verifyPaidToken(paidToken)) {
+    return fail(402, "PAYMENT_REQUIRED", "Payment required.");
   }
 
   let formData: FormData;

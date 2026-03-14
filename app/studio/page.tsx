@@ -29,9 +29,7 @@ interface PhotoEntry {
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const PRICE_PER   = 50;
-const MIN_PHOTOS  = 3;
-const MAX_PHOTOS  = 30;
+const MAX_PHOTOS  = LEGAL.maxPhotosPerOrder;
 
 // ── Image helpers (ported from original) ──────────────────────────────────────
 async function normalizeImageFile(
@@ -188,21 +186,35 @@ export default function StudioPage() {
 
   // ── Возврат с Робокассы ───────────────────────────────────────────────────────
   useEffect(() => {
-    const params   = new URLSearchParams(window.location.search);
+    const params    = new URLSearchParams(window.location.search);
     const paidParam = params.get("paid");
     const invIdStr  = params.get("InvId");
 
     if (!paidParam || !invIdStr) return;
-
-    // Очищаем URL, чтобы при обновлении страницы не повторять логику
-    window.history.replaceState({}, "", "/studio");
-
-    if (paidParam === "false") {
-      setPaymentError("Оплата отменена или не прошла. Попробуйте ещё раз.");
-      return;
-    }
+    // InvId остаётся в URL до завершения проверки, чтобы перезагрузка повторяла попытку
 
     const invId = parseInt(invIdStr, 10);
+
+    if (paidParam === "false") {
+      // fix #5: восстанавливаем фото для повторной попытки
+      window.history.replaceState({}, "", "/studio");
+      (async () => {
+        const order = await loadOrder(invId).catch(() => null);
+        if (order) {
+          const restored: PhotoEntry[] = order.photos.map((p: StoredPhoto) => ({
+            ...p,
+            previewUrl: URL.createObjectURL(p.file),
+            resultUrl:  undefined,
+            resultBlob: undefined,
+            error:      undefined,
+          }));
+          setPhotos(restored);
+          setMode(order.mode as BatchMode);
+        }
+        setPaymentError("Оплата отменена или не прошла. Попробуйте ещё раз.");
+      })();
+      return;
+    }
 
     (async () => {
       try {
@@ -211,6 +223,7 @@ export default function StudioPage() {
         const { paid }  = (await statusRes.json()) as { paid: boolean };
 
         if (!paid) {
+          // Не убираем URL — перезагрузка повторит проверку (fix #4)
           setPaymentError(
             `Оплата ещё не подтверждена. Если деньги были списаны — обратитесь в поддержку: ${LEGAL.email}`,
           );
@@ -220,8 +233,10 @@ export default function StudioPage() {
         // 2. Восстанавливаем фото из IndexedDB
         const order = await loadOrder(invId);
         if (!order) {
+          window.history.replaceState({}, "", "/studio");
+          setIsPaid(true); // cookie установлен — /api/declutter примет запросы
           setPaymentError(
-            "Не удалось восстановить фотографии (данные в браузере удалены). Загрузите фото заново.",
+            "Не удалось восстановить фотографии (данные в браузере удалены). Загрузите фото заново — оплата действительна.",
           );
           return;
         }
@@ -238,6 +253,7 @@ export default function StudioPage() {
         setMode(order.mode as BatchMode);
         setIsPaid(true);
         setIsProcessing(true);
+        window.history.replaceState({}, "", "/studio"); // убираем только здесь (fix #4)
 
         for (const photo of restoredPhotos) {
           await processPhoto(photo, order.mode as BatchMode);
@@ -246,6 +262,7 @@ export default function StudioPage() {
         setIsProcessing(false);
         await deleteOrder(invId);
       } catch {
+        window.history.replaceState({}, "", "/studio");
         setPaymentError(`Произошла ошибка при восстановлении заказа. Обратитесь в поддержку: ${LEGAL.email}`);
       }
     })();
@@ -255,7 +272,7 @@ export default function StudioPage() {
   const validPhotos   = photos.filter((p) => p.status !== "error");
   const validCount    = validPhotos.length;
   const maskedCount   = validPhotos.filter((p) => p.status === "masked").length;
-  const totalPrice    = Math.max(validCount, MIN_PHOTOS) * PRICE_PER;
+  const totalPrice    = Math.max(validCount, LEGAL.minPhotosPerOrder) * LEGAL.pricePerPhoto;
   const allMasked     = mode === "auto" ||
     validPhotos.every((p) => ["masked", "processing", "done"].includes(p.status));
 
@@ -283,9 +300,9 @@ export default function StudioPage() {
     ctaExtraClass = s.ctaDone;
   } else if (validCount === 0) {
     ctaState = "disabled";
-  } else if (validCount < MIN_PHOTOS) {
+  } else if (validCount < LEGAL.minPhotosPerOrder) {
     ctaState = "warn";
-    ctaText  = `Загрузите ещё ${MIN_PHOTOS - validCount} фото (минимум ${MIN_PHOTOS})`;
+    ctaText  = `Загрузите ещё ${LEGAL.minPhotosPerOrder - validCount} фото (минимум ${LEGAL.minPhotosPerOrder})`;
     ctaExtraClass = s.ctaWarn;
   } else if (mode === "manual" && !allMasked) {
     const remaining = validPhotos.filter((p) => p.status === "ready").length;
@@ -504,7 +521,7 @@ export default function StudioPage() {
       const res = await fetch("/api/payment/create", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ photoCount: Math.max(validCount, MIN_PHOTOS) }),
+        body:    JSON.stringify({ photoCount: Math.max(validCount, LEGAL.minPhotosPerOrder) }),
       });
       if (!res.ok) throw new Error("payment create failed");
       const { paymentUrl, invId } = (await res.json()) as { paymentUrl: string; invId: number };
@@ -708,7 +725,7 @@ export default function StudioPage() {
                     <div className={s.pcRow}>
                       <span className={s.pcRowLbl}>К расчёту</span>
                       <span className={s.pcRowVal}>
-                        {validCount < MIN_PHOTOS ? `${MIN_PHOTOS} (минимум)` : Math.max(validCount, MIN_PHOTOS)}
+                        {validCount < LEGAL.minPhotosPerOrder ? `${LEGAL.minPhotosPerOrder} (минимум)` : Math.max(validCount, LEGAL.minPhotosPerOrder)}
                       </span>
                     </div>
                   </div>
@@ -719,14 +736,14 @@ export default function StudioPage() {
                       {totalPrice} ₽
                     </span>
                   </div>
-                  {validCount > 0 && validCount < MIN_PHOTOS && (
+                  {validCount > 0 && validCount < LEGAL.minPhotosPerOrder && (
                     <div className={s.pcWarn}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}>
                         <circle cx="12" cy="12" r="10" /><path d="M12 8v4m0 4h.01" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                       <span>
-                        Минимальный пакет {MIN_PHOTOS} фото: {MIN_PHOTOS * PRICE_PER} ₽.
-                        Добавьте ещё {MIN_PHOTOS - validCount} фото.
+                        Минимальный пакет {LEGAL.minPhotosPerOrder} фото: {LEGAL.minPhotosPerOrder * LEGAL.pricePerPhoto} ₽.
+                        Добавьте ещё {LEGAL.minPhotosPerOrder - validCount} фото.
                       </span>
                     </div>
                   )}

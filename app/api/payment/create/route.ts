@@ -7,7 +7,9 @@ export async function POST(req: NextRequest) {
   const count    = Math.max(LEGAL.minPhotosPerOrder, Number(photoCount) || 0);
   const outSum   = count * LEGAL.pricePerPhoto;
   const invId    = generateInvId();
-  const siteUrl  = LEGAL.siteUrl;
+  const proto   = req.headers.get("x-forwarded-proto") ?? "https";
+  const host    = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";
+  const siteUrl = host ? `${proto}://${host}` : LEGAL.siteUrl;
 
   const paymentUrl = buildPaymentUrl(
     outSum,
