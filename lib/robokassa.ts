@@ -9,9 +9,11 @@ function md5(str: string): string {
   return createHash("md5").update(str, "utf8").digest("hex");
 }
 
-/** Генерирует уникальный InvId (1–2 000 000 000). */
+/** Генерирует уникальный InvId (1–2 000 000 000) через CSPRNG. */
 export function generateInvId(): number {
-  return Math.floor(Math.random() * 2_000_000_000) + 1;
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return (buf[0] % 2_000_000_000) + 1;
 }
 
 /** Формирует URL для редиректа пользователя на страницу оплаты Робокассы. */
@@ -44,15 +46,33 @@ export function verifyResultSignature(
   return expected.toLowerCase() === signatureValue.toLowerCase();
 }
 
-/** URL для проверки статуса платежа через Робокассу XML API. */
+/**
+ * URL для проверки статуса платежа через Робокассу XML API (OpStateExt).
+ * Параметр InvoiceID (не InvId!) — по документации Робокассы.
+ * Внимание: работает ТОЛЬКО в боевом режиме, не для тестовых платежей.
+ */
 export function buildStatusUrl(invId: number): string {
   const sig = md5(`${LOGIN}:${invId}:${PASS2}`);
   const params = new URLSearchParams({
     MerchantLogin: LOGIN,
-    InvId:         String(invId),
+    InvoiceID:     String(invId),   // Bug fix: документация требует InvoiceID
     Signature:     sig,
   });
   return `https://auth.robokassa.ru/Merchant/WebService/Service.asmx/OpStateExt?${params}`;
+}
+
+/**
+ * Верифицирует подпись из SuccessURL редиректа Робокассы.
+ * Формула: MD5(OutSum:InvId:Password#1)
+ * Работает в обоих режимах — тестовом и боевом.
+ */
+export function verifySuccessSignature(
+  outSum: string,
+  invId: string,
+  signatureValue: string,
+): boolean {
+  const expected = md5(`${outSum}:${invId}:${PASS1}`);
+  return expected.toLowerCase() === signatureValue.toLowerCase();
 }
 
 /** Подписывает токен оплаченного заказа для cookie sa_paid. */

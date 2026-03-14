@@ -218,8 +218,13 @@ export default function StudioPage() {
 
     (async () => {
       try {
-        // 1. Проверяем статус платежа через Робокассу
-        const statusRes = await fetch(`/api/payment/status?invId=${invId}`);
+        // 1. Проверяем статус платежа:
+        //    передаём OutSum и SignatureValue из SuccessURL — сервер верифицирует подпись
+        //    MD5(OutSum:InvId:Password1). Работает в тест и боевом режиме.
+        const outSum = params.get("OutSum") ?? "";
+        const sig    = params.get("SignatureValue") ?? "";
+        const statusUrl = `/api/payment/status?invId=${invIdStr}&outSum=${encodeURIComponent(outSum)}&sig=${encodeURIComponent(sig)}`;
+        const statusRes = await fetch(statusUrl);
         const { paid }  = (await statusRes.json()) as { paid: boolean };
 
         if (!paid) {
