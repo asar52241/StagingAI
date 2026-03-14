@@ -59,11 +59,13 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ paid: false, error: "robokassa api error" });
       }
       const xml = await res.text();
+      console.log("[payment/status] OpStateExt response:", xml);
 
       // State Code 100 = оплачено успешно
       const stateMatch = xml.match(/<State>[\s\S]*?<Code>(\d+)<\/Code>/);
       const stateCode  = stateMatch ? parseInt(stateMatch[1], 10) : 0;
       if (stateCode !== 100) {
+        console.log("[payment/status] stateCode not 100:", stateCode);
         return NextResponse.json({ paid: false, stateCode });
       }
 
