@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { LEGAL } from "@/config/legal";
+import { deleteOrder, loadOrder, saveOrder, type StoredPhoto } from "@/lib/photoDB";
 import MaskEditor, {
   MaskEditorHandle,
   MaskToolMode,
@@ -169,6 +170,8 @@ export default function StudioPage() {
   const [showResetModal, setShowResetModal] = useState(false);
   const [showConsentModal, setShowConsentModal] = useState(false);
   const [consentChecked, setConsentChecked]     = useState(false);
+  const [isCreatingPayment, setIsCreatingPayment] = useState(false);
+  const [paymentError, setPaymentError]           = useState<string | null>(null);
   const maskEditorRef = useRef<MaskEditorHandle | null>(null);
 
   // ── URL cleanup ───────────────────────────────────────────────────────────────
@@ -182,6 +185,71 @@ export default function StudioPage() {
       });
     };
   }, []);
+
+  // ── Возврат с Робокассы ───────────────────────────────────────────────────────
+  useEffect(() => {
+    const params   = new URLSearchParams(window.location.search);
+    const paidParam = params.get("paid");
+    const invIdStr  = params.get("InvId");
+
+    if (!paidParam || !invIdStr) return;
+
+    // Очищаем URL, чтобы при обновлении страницы не повторять логику
+    window.history.replaceState({}, "", "/studio");
+
+    if (paidParam === "false") {
+      setPaymentError("Оплата отменена или не прошла. Попробуйте ещё раз.");
+      return;
+    }
+
+    const invId = parseInt(invIdStr, 10);
+
+    (async () => {
+      try {
+        // 1. Проверяем статус платежа через Робокассу
+        const statusRes = await fetch(`/api/payment/status?invId=${invId}`);
+        const { paid }  = (await statusRes.json()) as { paid: boolean };
+
+        if (!paid) {
+          setPaymentError(
+            `Оплата ещё не подтверждена. Если деньги были списаны — обратитесь в поддержку: ${LEGAL.email}`,
+          );
+          return;
+        }
+
+        // 2. Восстанавливаем фото из IndexedDB
+        const order = await loadOrder(invId);
+        if (!order) {
+          setPaymentError(
+            "Не удалось восстановить фотографии (данные в браузере удалены). Загрузите фото заново.",
+          );
+          return;
+        }
+
+        const restoredPhotos: PhotoEntry[] = order.photos.map((p: StoredPhoto) => ({
+          ...p,
+          previewUrl: URL.createObjectURL(p.file),
+          resultUrl:  undefined,
+          resultBlob: undefined,
+          error:      undefined,
+        }));
+
+        setPhotos(restoredPhotos);
+        setMode(order.mode as BatchMode);
+        setIsPaid(true);
+        setIsProcessing(true);
+
+        for (const photo of restoredPhotos) {
+          await processPhoto(photo, order.mode as BatchMode);
+        }
+
+        setIsProcessing(false);
+        await deleteOrder(invId);
+      } catch {
+        setPaymentError(`Произошла ошибка при восстановлении заказа. Обратитесь в поддержку: ${LEGAL.email}`);
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived ───────────────────────────────────────────────────────────────────
   const validPhotos   = photos.filter((p) => p.status !== "error");
@@ -426,14 +494,43 @@ export default function StudioPage() {
   };
 
   const handleConfirmConsent = async () => {
-    if (!consentChecked) return;
-    setShowConsentModal(false);
+    if (!consentChecked || isCreatingPayment) return;
     const toProcess = photos.filter((p) => p.status === "ready" || p.status === "masked");
     if (!toProcess.length) return;
-    setIsPaid(true);
-    setIsProcessing(true);
-    for (const photo of toProcess) await processPhoto(photo, mode);
-    setIsProcessing(false);
+
+    setIsCreatingPayment(true);
+    try {
+      // 1. Создаём платёж на сервере
+      const res = await fetch("/api/payment/create", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ photoCount: Math.max(validCount, MIN_PHOTOS) }),
+      });
+      if (!res.ok) throw new Error("payment create failed");
+      const { paymentUrl, invId } = (await res.json()) as { paymentUrl: string; invId: number };
+
+      // 2. Сохраняем фото в IndexedDB (переживут редирект)
+      await saveOrder({
+        invId,
+        mode,
+        photos: toProcess.map((p) => ({
+          id:         p.id,
+          file:       p.file,
+          name:       p.name,
+          status:     p.status as "ready" | "masked",
+          maskFile:   p.maskFile,
+          dimensions: p.dimensions,
+          hasRetry:   p.hasRetry,
+        })),
+      });
+
+      // 3. Редиректим на Робокассу
+      window.location.href = paymentUrl;
+    } catch {
+      setIsCreatingPayment(false);
+      setShowConsentModal(false);
+      setPaymentError("Не удалось создать платёж. Проверьте соединение и попробуйте ещё раз.");
+    }
   };
 
   const handleRetry = async (photo: PhotoEntry) => {
@@ -897,6 +994,21 @@ export default function StudioPage() {
         </div>
       </div>
 
+      {/* ── Ошибка оплаты ── */}
+      {paymentError && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 w-full max-w-md px-4">
+          <div className="rounded-xl bg-red-50 border border-red-200 p-4 shadow-lg flex items-start gap-3">
+            <svg className="mt-0.5 shrink-0 text-red-500" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/>
+            </svg>
+            <p className="text-sm text-red-700 flex-1">{paymentError}</p>
+            <button onClick={() => setPaymentError(null)} className="shrink-0 text-red-400 hover:text-red-600">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Consent modal ── */}
       {showConsentModal && (
         <div
@@ -948,10 +1060,10 @@ export default function StudioPage() {
               </button>
               <button
                 onClick={handleConfirmConsent}
-                disabled={!consentChecked}
+                disabled={!consentChecked || isCreatingPayment}
                 className="flex-1 rounded-full bg-gray-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400"
               >
-                Подтвердить и оплатить
+                {isCreatingPayment ? "Создаём платёж…" : "Подтвердить и оплатить"}
               </button>
             </div>
 
