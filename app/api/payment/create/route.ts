@@ -17,13 +17,13 @@ export async function POST(req: NextRequest) {
     `Обработка ${count} фото — StagingAI`,
   );
 
-  // Возвращаем пользователя на промежуточную страницу, а не сразу в /studio:
-  // она закрывает платёжную вкладку и передаёт сигнал исходной вкладке Studio.
-  // Если новая вкладка была заблокирована и оплата шла в текущей, страница сама
-  // переведёт пользователя обратно в /studio.
+  // Добавляем SuccessURL и FailURL как GET-параметры.
+  // Робокасса автоматически прибавит OutSum и InvId к этим URL при редиректе.
+  // Также убедитесь, что в личном кабинете Робокассы включена опция
+  // «Разрешить переопределение SuccessURL и FailURL».
   const url = new URL(paymentUrl);
-  url.searchParams.set("SuccessURL", `${siteUrl}/payment-return?paid=true`);
-  url.searchParams.set("FailURL",    `${siteUrl}/payment-return?paid=false`);
+  url.searchParams.set("SuccessURL", `${siteUrl}/studio?paid=true`);
+  url.searchParams.set("FailURL",    `${siteUrl}/studio?paid=false`);
 
   return NextResponse.json({ paymentUrl: url.toString(), invId, outSum, isTest: IS_TEST });
 }
