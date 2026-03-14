@@ -190,6 +190,66 @@ export default function StudioPage() {
     const paidParam = params.get("paid");
     const invIdStr  = params.get("InvId");
 
+    // Fallback: paid=true без InvId — читаем из localStorage
+    if (paidParam === "true" && !invIdStr) {
+      const pendingRaw = localStorage.getItem("stagingai_pending");
+      if (!pendingRaw) return;
+      let pending: { invId: number; outSum: string };
+      try { pending = JSON.parse(pendingRaw); } catch { return; }
+
+      (async () => {
+        try {
+          const statusUrl = `/api/payment/status?invId=${pending.invId}&outSum=${encodeURIComponent(pending.outSum)}&sig=&noSig=true`;
+          const statusRes = await fetch(statusUrl);
+          const { paid }  = (await statusRes.json()) as { paid: boolean };
+
+          if (!paid) {
+            setPaymentError(
+              `Оплата ещё не подтверждена. Если деньги были списаны — обратитесь в поддержку: ${LEGAL.email}`,
+            );
+            return;
+          }
+
+          localStorage.removeItem("stagingai_pending");
+          const order = await loadOrder(pending.invId);
+          if (!order) {
+            window.history.replaceState({}, "", "/studio");
+            setIsPaid(true);
+            setPaymentError(
+              "Не удалось восстановить фотографии (данные в браузере удалены). Загрузите фото заново — оплата действительна.",
+            );
+            return;
+          }
+
+          const restoredPhotos: PhotoEntry[] = order.photos.map((p: StoredPhoto) => ({
+            ...p,
+            previewUrl: URL.createObjectURL(p.file),
+            resultUrl:  undefined,
+            resultBlob: undefined,
+            error:      undefined,
+          }));
+
+          setPhotos(restoredPhotos);
+          setMode(order.mode as BatchMode);
+          setIsPaid(true);
+          setIsProcessing(true);
+          window.history.replaceState({}, "", "/studio");
+
+          for (const photo of restoredPhotos) {
+            await processPhoto(photo, order.mode as BatchMode);
+          }
+
+          setIsProcessing(false);
+          await deleteOrder(pending.invId);
+        } catch {
+          localStorage.removeItem("stagingai_pending");
+          window.history.replaceState({}, "", "/studio");
+          setPaymentError(`Произошла ошибка при восстановлении заказа. Обратитесь в поддержку: ${LEGAL.email}`);
+        }
+      })();
+      return;
+    }
+
     if (!paidParam || !invIdStr) return;
     // InvId остаётся в URL до завершения проверки, чтобы перезагрузка повторяла попытку
 
@@ -197,6 +257,7 @@ export default function StudioPage() {
 
     if (paidParam === "false") {
       // fix #5: восстанавливаем фото для повторной попытки
+      localStorage.removeItem("stagingai_pending");
       window.history.replaceState({}, "", "/studio");
       (async () => {
         const order = await loadOrder(invId).catch(() => null);
@@ -235,6 +296,8 @@ export default function StudioPage() {
           return;
         }
 
+        localStorage.removeItem("stagingai_pending");
+
         // 2. Восстанавливаем фото из IndexedDB
         const order = await loadOrder(invId);
         if (!order) {
@@ -267,6 +330,7 @@ export default function StudioPage() {
         setIsProcessing(false);
         await deleteOrder(invId);
       } catch {
+        localStorage.removeItem("stagingai_pending");
         window.history.replaceState({}, "", "/studio");
         setPaymentError(`Произошла ошибка при восстановлении заказа. Обратитесь в поддержку: ${LEGAL.email}`);
       }
@@ -546,7 +610,16 @@ export default function StudioPage() {
         })),
       });
 
-      // 3. Редиректим на Робокассу
+      // 3. Сохраняем pending-платёж в localStorage (fallback если Робокасса вернёт без параметров)
+      localStorage.setItem(
+        "stagingai_pending",
+        JSON.stringify({
+          invId,
+          outSum: (Math.max(validCount, LEGAL.minPhotosPerOrder) * LEGAL.pricePerPhoto).toFixed(2),
+        }),
+      );
+
+      // 4. Редиректим на Робокассу
       window.location.href = paymentUrl;
     } catch {
       setIsCreatingPayment(false);

@@ -22,9 +22,13 @@ export async function GET(req: NextRequest) {
   // но нормализуем до 2 знаков перед проверкой подписи — формат одинаков в тест и боевом.
   const outSumRaw = sp.get("outSum") ?? "";
   const sig       = sp.get("sig")    ?? "";
+  const noSig     = sp.get("noSig")  === "true";
 
   const invId = parseInt(invIdStr, 10);
-  if (!invId || invId <= 0 || invId > MAX_INV_ID || !outSumRaw || !sig) {
+  if (!invId || invId <= 0 || invId > MAX_INV_ID || !outSumRaw) {
+    return NextResponse.json({ paid: false, error: "missing or invalid params" }, { status: 400 });
+  }
+  if (!noSig && !sig) {
     return NextResponse.json({ paid: false, error: "missing or invalid params" }, { status: 400 });
   }
 
@@ -33,7 +37,8 @@ export async function GET(req: NextRequest) {
   const outSumNorm = parseFloat(outSumRaw).toFixed(2);
 
   // ── 1. Верификация подписи SuccessURL ─────────────────────────────────────────
-  if (!verifySuccessSignature(outSumNorm, invIdStr, sig)) {
+  // Пропускаем только если явно noSig=true (fallback-путь через localStorage)
+  if (!noSig && !verifySuccessSignature(outSumNorm, invIdStr, sig)) {
     return NextResponse.json({ paid: false, error: "invalid signature" }, { status: 400 });
   }
 

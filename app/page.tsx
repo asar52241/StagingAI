@@ -5,6 +5,7 @@ import { useState } from "react";
 import { LEGAL } from "@/config/legal";
 import { FloatingNav } from "@/components/ui/floating-navbar";
 import { HeroSection } from "@/components/ui/hero-section";
+import { PendingPaymentRedirect } from "@/components/PendingPaymentRedirect";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -742,6 +743,7 @@ const floatingNavItems = [
 export default function LandingPage() {
   return (
     <div className="bg-white text-gray-900">
+      <PendingPaymentRedirect />
       <FloatingNav navItems={floatingNavItems} />
       {/* Header */}
       <header className="border-b border-gray-100 bg-white">
