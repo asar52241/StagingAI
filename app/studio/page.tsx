@@ -4,6 +4,14 @@ import Link from "next/link";
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { LEGAL } from "@/config/legal";
 import { deleteOrder, loadOrder, saveOrder, type StoredPhoto } from "@/lib/photoDB";
+import {
+  PENDING_PAYMENT_KEY,
+  PAYMENT_RETURN_EVENT_KEY,
+  STUDIO_TAB_MARKER_KEY,
+  parsePaymentReturnEvent,
+  parsePendingPayment,
+  type PendingPaymentData,
+} from "@/lib/paymentFlow";
 import MaskEditor, {
   MaskEditorHandle,
   MaskToolMode,
@@ -147,6 +155,28 @@ const STATUS_CLASS: Record<PhotoStatus, string> = {
   error: s.stError, processing: s.stProcessing, done: s.stDone,
 };
 
+function buildRestoredPhotos(photos: StoredPhoto[]): PhotoEntry[] {
+  return photos.map((photo) => ({
+    ...photo,
+    previewUrl: URL.createObjectURL(photo.file),
+    resultUrl: undefined,
+    resultBlob: undefined,
+    error: undefined,
+  }));
+}
+
+function revokePhotoUrls(photos: PhotoEntry[]) {
+  photos.forEach((photo) => {
+    URL.revokeObjectURL(photo.previewUrl);
+    if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl);
+  });
+}
+
+function readPendingPayment(): PendingPaymentData | null {
+  if (typeof window === "undefined") return null;
+  return parsePendingPayment(window.localStorage.getItem(PENDING_PAYMENT_KEY));
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 let nextId = 0;
 
@@ -170,172 +200,262 @@ export default function StudioPage() {
   const [consentChecked, setConsentChecked]     = useState(false);
   const [isCreatingPayment, setIsCreatingPayment] = useState(false);
   const [paymentError, setPaymentError]           = useState<string | null>(null);
+  const [pendingPayment, setPendingPayment]       = useState<PendingPaymentData | null>(null);
+  const [isCheckingPayment, setIsCheckingPayment] = useState(false);
   const maskEditorRef = useRef<MaskEditorHandle | null>(null);
 
   // ── URL cleanup ───────────────────────────────────────────────────────────────
-  const photosRef = useRef<PhotoEntry[]>([]);
+  const photosRef               = useRef<PhotoEntry[]>([]);
+  const pendingPaymentRef       = useRef<PendingPaymentData | null>(null);
+  const paymentCheckInFlightRef = useRef(false);
+
   useEffect(() => { photosRef.current = photos; }, [photos]);
+  useEffect(() => { pendingPaymentRef.current = pendingPayment; }, [pendingPayment]);
   useEffect(() => {
     return () => {
-      photosRef.current.forEach((p) => {
-        URL.revokeObjectURL(p.previewUrl);
-        if (p.resultUrl) URL.revokeObjectURL(p.resultUrl);
-      });
+      revokePhotoUrls(photosRef.current);
     };
   }, []);
 
-  // ── Возврат с Робокассы ───────────────────────────────────────────────────────
-  useEffect(() => {
-    const params    = new URLSearchParams(window.location.search);
-    const paidParam = params.get("paid");
-    const invIdStr  = params.get("InvId");
+  const updatePendingPayment = (next: PendingPaymentData | null) => {
+    pendingPaymentRef.current = next;
+    setPendingPayment(next);
+    if (typeof window === "undefined") return;
+    if (next) {
+      window.localStorage.setItem(PENDING_PAYMENT_KEY, JSON.stringify(next));
+    } else {
+      window.localStorage.removeItem(PENDING_PAYMENT_KEY);
+    }
+  };
 
-    // Fallback: paid=true без InvId — читаем из localStorage
-    if (paidParam === "true" && !invIdStr) {
-      const pendingRaw = localStorage.getItem("stagingai_pending");
-      if (!pendingRaw) return;
-      let pending: { invId: number; outSum: string };
-      try { pending = JSON.parse(pendingRaw); } catch { return; }
+  const replacePhotos = (nextPhotos: PhotoEntry[]) => {
+    revokePhotoUrls(photosRef.current);
+    photosRef.current = nextPhotos;
+    setPhotos(nextPhotos);
+  };
 
-      (async () => {
-        try {
-          const statusUrl = `/api/payment/status?invId=${pending.invId}&outSum=${encodeURIComponent(pending.outSum)}&sig=&noSig=true`;
-          const statusRes = await fetch(statusUrl);
-          const { paid }  = (await statusRes.json()) as { paid: boolean };
+  const restoreOrderIntoStudio = async (invId: number) => {
+    const order = await loadOrder(invId).catch(() => null);
+    if (!order) return null;
 
-          if (!paid) {
-            setPaymentError(
-              `Оплата ещё не подтверждена. Если деньги были списаны — обратитесь в поддержку: ${LEGAL.email}`,
-            );
-            return;
-          }
+    const restoredPhotos = buildRestoredPhotos(order.photos);
+    replacePhotos(restoredPhotos);
+    setMode(order.mode as BatchMode);
+    return { order, restoredPhotos };
+  };
 
-          localStorage.removeItem("stagingai_pending");
-          const order = await loadOrder(pending.invId);
-          if (!order) {
-            window.history.replaceState({}, "", "/studio");
-            setIsPaid(true);
-            setPaymentError(
-              "Не удалось восстановить фотографии (данные в браузере удалены). Загрузите фото заново — оплата действительна.",
-            );
-            return;
-          }
+  const restoreCancelledOrder = async (invId: number) => {
+    updatePendingPayment(null);
+    setIsPaid(false);
+    setIsProcessing(false);
 
-          const restoredPhotos: PhotoEntry[] = order.photos.map((p: StoredPhoto) => ({
-            ...p,
-            previewUrl: URL.createObjectURL(p.file),
-            resultUrl:  undefined,
-            resultBlob: undefined,
-            error:      undefined,
-          }));
-
-          setPhotos(restoredPhotos);
-          setMode(order.mode as BatchMode);
-          setIsPaid(true);
-          setIsProcessing(true);
-          window.history.replaceState({}, "", "/studio");
-
-          for (const photo of restoredPhotos) {
-            await processPhoto(photo, order.mode as BatchMode);
-          }
-
-          setIsProcessing(false);
-          await deleteOrder(pending.invId);
-        } catch {
-          localStorage.removeItem("stagingai_pending");
-          window.history.replaceState({}, "", "/studio");
-          setPaymentError(`Произошла ошибка при восстановлении заказа. Обратитесь в поддержку: ${LEGAL.email}`);
-        }
-      })();
-      return;
+    if (invId > 0) {
+      await restoreOrderIntoStudio(invId);
     }
 
-    if (!paidParam || !invIdStr) return;
-    // InvId остаётся в URL до завершения проверки, чтобы перезагрузка повторяла попытку
+    window.history.replaceState({}, "", "/studio");
+    setPaymentError("Оплата отменена или не прошла. Попробуйте ещё раз.");
+  };
 
-    const invId = parseInt(invIdStr, 10);
+  const startProcessingPaidOrder = async (invId: number, pending?: PendingPaymentData | null) => {
+    try {
+      const restored = await restoreOrderIntoStudio(invId);
+      if (!restored) {
+        window.history.replaceState({}, "", "/studio");
+        setIsPaid(true);
+        updatePendingPayment(null);
+        setPaymentError(
+          "Не удалось восстановить фотографии (данные в браузере удалены). Загрузите фото заново — оплата действительна.",
+        );
+        return false;
+      }
 
-    if (paidParam === "false") {
-      // fix #5: восстанавливаем фото для повторной попытки
-      localStorage.removeItem("stagingai_pending");
+      const processingPending: PendingPaymentData = {
+        invId,
+        outSum: pending?.outSum
+          ?? (Math.max(restored.order.photos.length, LEGAL.minPhotosPerOrder) * LEGAL.pricePerPhoto).toFixed(2),
+        paymentUrl: pending?.paymentUrl,
+        isTest: pending?.isTest,
+        stage: "processing",
+      };
+
+      updatePendingPayment(processingPending);
+      setPaymentError(null);
+      setIsPaid(true);
+      setIsProcessing(true);
       window.history.replaceState({}, "", "/studio");
-      (async () => {
-        const order = await loadOrder(invId).catch(() => null);
-        if (order) {
-          const restored: PhotoEntry[] = order.photos.map((p: StoredPhoto) => ({
-            ...p,
-            previewUrl: URL.createObjectURL(p.file),
-            resultUrl:  undefined,
-            resultBlob: undefined,
-            error:      undefined,
-          }));
-          setPhotos(restored);
-          setMode(order.mode as BatchMode);
-        }
-        setPaymentError("Оплата отменена или не прошла. Попробуйте ещё раз.");
-      })();
-      return;
+
+      for (const photo of restored.restoredPhotos) {
+        await processPhoto(photo, restored.order.mode as BatchMode);
+      }
+
+      await deleteOrder(invId).catch(() => undefined);
+      updatePendingPayment(null);
+      return true;
+    } catch {
+      updatePendingPayment(null);
+      window.history.replaceState({}, "", "/studio");
+      setPaymentError(`Произошла ошибка при восстановлении заказа. Обратитесь в поддержку: ${LEGAL.email}`);
+      return false;
+    } finally {
+      setIsProcessing(false);
     }
+  };
 
-    (async () => {
-      try {
-        // 1. Проверяем статус платежа:
-        //    передаём OutSum и SignatureValue из SuccessURL — сервер верифицирует подпись
-        //    MD5(OutSum:InvId:Password1). Работает в тест и боевом режиме.
-        const outSum = params.get("OutSum") ?? "";
-        const sig    = params.get("SignatureValue") ?? "";
-        const statusUrl = `/api/payment/status?invId=${invIdStr}&outSum=${encodeURIComponent(outSum)}&sig=${encodeURIComponent(sig)}`;
-        const statusRes = await fetch(statusUrl);
-        const { paid }  = (await statusRes.json()) as { paid: boolean };
+  const tryConfirmPayment = async ({
+    invId,
+    outSum,
+    sig,
+    noSig = false,
+    paymentUrl,
+    silent = false,
+  }: {
+    invId: number;
+    outSum: string;
+    sig?: string;
+    noSig?: boolean;
+    paymentUrl?: string;
+    silent?: boolean;
+  }) => {
+    if (!invId || !outSum || paymentCheckInFlightRef.current) return false;
 
-        if (!paid) {
-          // Не убираем URL — перезагрузка повторит проверку (fix #4)
+    paymentCheckInFlightRef.current = true;
+    setIsCheckingPayment(true);
+
+    try {
+      const statusParams = new URLSearchParams({
+        invId: String(invId),
+        outSum,
+      });
+
+      if (noSig) {
+        statusParams.set("sig", "");
+        statusParams.set("noSig", "true");
+      } else if (sig) {
+        statusParams.set("sig", sig);
+      }
+
+      const statusRes = await fetch(`/api/payment/status?${statusParams.toString()}`);
+      const payload   = (await statusRes.json()) as { paid?: boolean };
+
+      if (!payload.paid) {
+        if (!silent) {
           setPaymentError(
             `Оплата ещё не подтверждена. Если деньги были списаны — обратитесь в поддержку: ${LEGAL.email}`,
           );
-          return;
         }
-
-        localStorage.removeItem("stagingai_pending");
-
-        // 2. Восстанавливаем фото из IndexedDB
-        const order = await loadOrder(invId);
-        if (!order) {
-          window.history.replaceState({}, "", "/studio");
-          setIsPaid(true); // cookie установлен — /api/declutter примет запросы
-          setPaymentError(
-            "Не удалось восстановить фотографии (данные в браузере удалены). Загрузите фото заново — оплата действительна.",
-          );
-          return;
-        }
-
-        const restoredPhotos: PhotoEntry[] = order.photos.map((p: StoredPhoto) => ({
-          ...p,
-          previewUrl: URL.createObjectURL(p.file),
-          resultUrl:  undefined,
-          resultBlob: undefined,
-          error:      undefined,
-        }));
-
-        setPhotos(restoredPhotos);
-        setMode(order.mode as BatchMode);
-        setIsPaid(true);
-        setIsProcessing(true);
-        window.history.replaceState({}, "", "/studio"); // убираем только здесь (fix #4)
-
-        for (const photo of restoredPhotos) {
-          await processPhoto(photo, order.mode as BatchMode);
-        }
-
-        setIsProcessing(false);
-        await deleteOrder(invId);
-      } catch {
-        localStorage.removeItem("stagingai_pending");
-        window.history.replaceState({}, "", "/studio");
-        setPaymentError(`Произошла ошибка при восстановлении заказа. Обратитесь в поддержку: ${LEGAL.email}`);
+        return false;
       }
-    })();
+
+      return await startProcessingPaidOrder(invId, {
+        invId,
+        outSum,
+        paymentUrl,
+        isTest: pendingPaymentRef.current?.isTest,
+        stage: "processing",
+      });
+    } catch {
+      if (!silent) {
+        setPaymentError(`Не удалось проверить оплату. Обратитесь в поддержку: ${LEGAL.email}`);
+      }
+      return false;
+    } finally {
+      paymentCheckInFlightRef.current = false;
+      setIsCheckingPayment(false);
+    }
+  };
+
+  const handlePaymentReturn = async (search: string) => {
+    const params    = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+    const paidParam = params.get("paid");
+    const pending   = pendingPaymentRef.current ?? readPendingPayment();
+
+    if (paidParam === "false") {
+      const invId = parseInt(params.get("InvId") ?? String(pending?.invId ?? 0), 10);
+      await restoreCancelledOrder(invId);
+      return;
+    }
+
+    const invId  = parseInt(params.get("InvId") ?? String(pending?.invId ?? 0), 10);
+    const outSum = params.get("OutSum") ?? pending?.outSum ?? "";
+    const sig    = params.get("SignatureValue") ?? "";
+
+    if (!invId || !outSum) return;
+
+    await tryConfirmPayment({
+      invId,
+      outSum,
+      sig: sig || undefined,
+      noSig: !sig,
+      paymentUrl: pending?.paymentUrl,
+    });
+  };
+
+  // ── Возврат с Робокассы ───────────────────────────────────────────────────────
+  useEffect(() => {
+    window.sessionStorage.setItem(STUDIO_TAB_MARKER_KEY, "1");
+
+    const pending = readPendingPayment();
+    if (pending) {
+      pendingPaymentRef.current = pending;
+      setPendingPayment(pending);
+    }
+
+    const params    = new URLSearchParams(window.location.search);
+    const paidParam = params.get("paid");
+
+    if (paidParam) {
+      window.history.replaceState({}, "", "/studio");
+      void handlePaymentReturn(window.location.search);
+      return;
+    }
+
+    if (pending?.stage === "processing") {
+      void startProcessingPaidOrder(pending.invId, pending);
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== PAYMENT_RETURN_EVENT_KEY || !event.newValue) return;
+      const payload = parsePaymentReturnEvent(event.newValue);
+      if (!payload) return;
+      void handlePaymentReturn(payload.search);
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!pendingPayment || pendingPayment.stage !== "awaiting_payment" || pendingPayment.isTest || isPaid || isProcessing) return;
+
+    let cancelled = false;
+    let timeoutId: number | undefined;
+
+    const pollPayment = async () => {
+      const currentPending = pendingPaymentRef.current;
+      if (!currentPending || currentPending.stage !== "awaiting_payment") return;
+
+      await tryConfirmPayment({
+        invId: currentPending.invId,
+        outSum: currentPending.outSum,
+        noSig: true,
+        paymentUrl: currentPending.paymentUrl,
+        silent: true,
+      });
+
+      if (cancelled || pendingPaymentRef.current?.stage !== "awaiting_payment") return;
+      timeoutId = window.setTimeout(pollPayment, 4000);
+    };
+
+    timeoutId = window.setTimeout(pollPayment, 4000);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [pendingPayment, isPaid, isProcessing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived ───────────────────────────────────────────────────────────────────
   const validPhotos   = photos.filter((p) => p.status !== "error");
@@ -344,13 +464,15 @@ export default function StudioPage() {
   const totalPrice    = Math.max(validCount, LEGAL.minPhotosPerOrder) * LEGAL.pricePerPhoto;
   const allMasked     = mode === "auto" ||
     validPhotos.every((p) => ["masked", "processing", "done"].includes(p.status));
+  const isAwaitingPayment = pendingPayment?.stage === "awaiting_payment";
+  const isOrderLocked     = isCreatingPayment || Boolean(pendingPayment) || isPaid;
 
   // Safe clamped index for the mask editor
   const clampedIndex    = Math.min(maskingIndex, Math.max(0, validPhotos.length - 1));
   const currentMaskPhoto = validPhotos[clampedIndex] ?? null;
 
   // Right panel mode: masking OR results
-  const isManualMasking = mode === "manual" && !isPaid && validPhotos.length > 0;
+  const isManualMasking = mode === "manual" && !isOrderLocked && validPhotos.length > 0;
 
   const resultPhotos = photos.filter((p) =>
     ["processing", "done"].includes(p.status) || (isPaid && p.status === "error"),
@@ -363,7 +485,11 @@ export default function StudioPage() {
   let ctaText             = "Загрузить фото";
   let ctaExtraClass       = "";
 
-  if (isPaid) {
+  if (isAwaitingPayment) {
+    ctaState = "done";
+    ctaText  = isCheckingPayment ? "Проверяем оплату…" : "Ожидаем оплату…";
+    ctaExtraClass = s.ctaDone;
+  } else if (isPaid) {
     ctaState = "done";
     ctaText  = isProcessing ? "Обработка…" : "Обработка завершена ✓";
     ctaExtraClass = s.ctaDone;
@@ -386,6 +512,7 @@ export default function StudioPage() {
 
   // ── File handling ─────────────────────────────────────────────────────────────
   const addFiles = useCallback(async (files: File[]) => {
+    if (isOrderLocked) return;
     const currentCount = photosRef.current.length;
     const allowed = Array.from(files).slice(0, MAX_PHOTOS - currentCount);
     if (!allowed.length) return;
@@ -426,15 +553,20 @@ export default function StudioPage() {
         );
       }
     }
-  }, []);
+  }, [isOrderLocked]);
 
   const handleFileInput = (e: ChangeEvent<HTMLInputElement>) => {
+    if (isOrderLocked) {
+      e.target.value = "";
+      return;
+    }
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
     if (files.length) addFiles(files);
   };
 
   const removePhoto = (id: number) => {
+    if (isOrderLocked) return;
     setPhotos((prev) => {
       const photo = prev.find((p) => p.id === id);
       if (photo) { URL.revokeObjectURL(photo.previewUrl); if (photo.resultUrl) URL.revokeObjectURL(photo.resultUrl); }
@@ -448,6 +580,7 @@ export default function StudioPage() {
 
   // ── Mode switching ────────────────────────────────────────────────────────────
   const handleSetMode = (m: BatchMode) => {
+    if (isOrderLocked) return;
     setMode(m);
     if (m === "manual") {
       // Jump to first unmasked photo
@@ -466,7 +599,7 @@ export default function StudioPage() {
 
   // ── Thumbnail click (manual mode navigation) ──────────────────────────────────
   const handleThumbClick = (photo: PhotoEntry) => {
-    if (mode === "manual" && !isPaid) {
+    if (mode === "manual" && !isOrderLocked) {
       const idx = validPhotos.findIndex((p) => p.id === photo.id);
       if (idx >= 0) { setMaskingIndex(idx); setMaskCanUndo(false); setMaskCanRedo(false); }
     }
@@ -586,6 +719,8 @@ export default function StudioPage() {
 
     setIsCreatingPayment(true);
     try {
+      const outSum = (Math.max(validCount, LEGAL.minPhotosPerOrder) * LEGAL.pricePerPhoto).toFixed(2);
+
       // 1. Создаём платёж на сервере
       const res = await fetch("/api/payment/create", {
         method:  "POST",
@@ -593,7 +728,11 @@ export default function StudioPage() {
         body:    JSON.stringify({ photoCount: Math.max(validCount, LEGAL.minPhotosPerOrder) }),
       });
       if (!res.ok) throw new Error("payment create failed");
-      const { paymentUrl, invId } = (await res.json()) as { paymentUrl: string; invId: number };
+      const { paymentUrl, invId, isTest } = (await res.json()) as {
+        paymentUrl: string;
+        invId: number;
+        isTest: boolean;
+      };
 
       // 2. Сохраняем фото в IndexedDB (переживут редирект)
       await saveOrder({
@@ -610,22 +749,52 @@ export default function StudioPage() {
         })),
       });
 
-      // 3. Сохраняем pending-платёж в localStorage (fallback если Робокасса вернёт без параметров)
-      localStorage.setItem(
-        "stagingai_pending",
-        JSON.stringify({
-          invId,
-          outSum: (Math.max(validCount, LEGAL.minPhotosPerOrder) * LEGAL.pricePerPhoto).toFixed(2),
-        }),
-      );
+      // 3. Сохраняем pending-платёж локально и открываем оплату в новой вкладке.
+      const pending: PendingPaymentData = {
+        invId,
+        outSum,
+        paymentUrl,
+        isTest,
+        stage: "awaiting_payment",
+      };
 
-      // 4. Редиректим на Робокассу
+      updatePendingPayment(pending);
+      setPaymentError(null);
+      setShowConsentModal(false);
+      setIsCreatingPayment(false);
+
+      const popup = window.open(paymentUrl, "_blank", "noopener,noreferrer");
+      if (popup) {
+        popup.focus();
+        return;
+      }
+
       window.location.href = paymentUrl;
     } catch {
       setIsCreatingPayment(false);
       setShowConsentModal(false);
       setPaymentError("Не удалось создать платёж. Проверьте соединение и попробуйте ещё раз.");
     }
+  };
+
+  const handleCheckPaymentNow = async () => {
+    if (!pendingPayment || pendingPayment.isTest) return;
+    await tryConfirmPayment({
+      invId: pendingPayment.invId,
+      outSum: pendingPayment.outSum,
+      noSig: true,
+      paymentUrl: pendingPayment.paymentUrl,
+    });
+  };
+
+  const handleReopenPayment = () => {
+    if (!pendingPayment?.paymentUrl) return;
+    const popup = window.open(pendingPayment.paymentUrl, "_blank", "noopener,noreferrer");
+    if (popup) {
+      popup.focus();
+      return;
+    }
+    window.location.href = pendingPayment.paymentUrl;
   };
 
   const handleRetry = async (photo: PhotoEntry) => {
@@ -643,7 +812,9 @@ export default function StudioPage() {
   };
 
   // ── Right panel subtitle ──────────────────────────────────────────────────────
-  const rpSub = !isPaid
+  const rpSub = isAwaitingPayment
+    ? "Ожидаем подтверждение платежа…"
+    : !isPaid
     ? "Ожидание загрузки и оплаты"
     : isProcessing
     ? "Обработка фотографий…"
@@ -670,12 +841,28 @@ export default function StudioPage() {
 
             {/* Drop zone */}
             <div
-              className={`${s.dropzone} ${isDragOver ? s.dropzoneOver : ""}`}
-              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+              className={`${s.dropzone} ${isDragOver ? s.dropzoneOver : ""} ${isOrderLocked ? s.dropzoneLocked : ""}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (isOrderLocked) return;
+                setIsDragOver(true);
+              }}
               onDragLeave={() => setIsDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setIsDragOver(false); addFiles(Array.from(e.dataTransfer.files)); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                if (isOrderLocked) return;
+                addFiles(Array.from(e.dataTransfer.files));
+              }}
             >
-              <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className={s.fileInput} onChange={handleFileInput} />
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                multiple
+                disabled={isOrderLocked}
+                className={s.fileInput}
+                onChange={handleFileInput}
+              />
               <div className={s.dzIcon}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                   <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" strokeLinecap="round" strokeLinejoin="round" />
@@ -701,9 +888,9 @@ export default function StudioPage() {
                 {/* Grid */}
                 <div className={s.phGrid}>
                   {photos.map((p) => {
-                    const isCurrentInEditor = mode === "manual" && !isPaid &&
+                    const isCurrentInEditor = mode === "manual" && !isOrderLocked &&
                       validPhotos[clampedIndex]?.id === p.id;
-                    const isClickable = mode === "manual" && !isPaid && p.status !== "error";
+                    const isClickable = mode === "manual" && !isOrderLocked && p.status !== "error";
                     return (
                       <div
                         key={p.id}
@@ -714,7 +901,7 @@ export default function StudioPage() {
                         {p.status === "uploading" && <div className={s.shimmer} />}
                         <div className={s.thumbOverlay} />
                         {/* Remove button only when not in manual-editing */}
-                        {!isCurrentInEditor && (
+                        {!isCurrentInEditor && !isOrderLocked && (
                           <button
                             className={s.rmBtn}
                             onClick={(e) => { e.stopPropagation(); removePhoto(p.id); }}
@@ -727,7 +914,7 @@ export default function StudioPage() {
                     );
                   })}
 
-                  {photos.length < MAX_PHOTOS && (
+                  {photos.length < MAX_PHOTOS && !isOrderLocked && (
                     <label className={s.addMoreCell}>
                       <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={handleFileInput} />
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -742,8 +929,8 @@ export default function StudioPage() {
                 <div className={s.secLbl} style={{ marginTop: 4 }}>Режим обработки</div>
                 <div className={s.modeGrid}>
                   <div
-                    className={`${s.modeCard} ${s.modeAuto} ${mode === "auto" ? s.modeSelected : ""}`}
-                    onClick={() => handleSetMode("auto")}
+                    className={`${s.modeCard} ${s.modeAuto} ${mode === "auto" ? s.modeSelected : ""} ${isOrderLocked ? s.modeLocked : ""}`}
+                    onClick={isOrderLocked ? undefined : () => handleSetMode("auto")}
                   >
                     <div className={s.mcCheck}>
                       {mode === "auto" && (
@@ -762,8 +949,8 @@ export default function StudioPage() {
                   </div>
 
                   <div
-                    className={`${s.modeCard} ${s.modeManual} ${mode === "manual" ? s.modeSelected : ""}`}
-                    onClick={() => handleSetMode("manual")}
+                    className={`${s.modeCard} ${s.modeManual} ${mode === "manual" ? s.modeSelected : ""} ${isOrderLocked ? s.modeLocked : ""}`}
+                    onClick={isOrderLocked ? undefined : () => handleSetMode("manual")}
                   >
                     <div className={s.mcCheck}>
                       {mode === "manual" && (
@@ -782,9 +969,16 @@ export default function StudioPage() {
                   </div>
                 </div>
 
-                {mode === "manual" && !isPaid && (
+                {mode === "manual" && !isOrderLocked && (
                   <div className={s.manualHint}>
                     Справа откроется редактор — обведите кистью объекты для удаления на каждом фото, затем нажмите «Следующее».
+                  </div>
+                )}
+
+                {isAwaitingPayment && (
+                  <div className={s.pendingHint}>
+                    Заказ зафиксирован. Оплата открыта в новой вкладке, а эта вкладка Studio
+                    автоматически запустит обработку сразу после подтверждения платежа.
                   </div>
                 )}
 
@@ -1028,7 +1222,55 @@ export default function StudioPage() {
                 </div>
               </div>
               <div className={s.rpScroll}>
-                {!isPaid ? (
+                {!isPaid && isAwaitingPayment ? (
+                  <div className={s.paymentPendingCard}>
+                    <div className={s.paymentPendingBadge}>Оплата открыта</div>
+                    <div className={s.paymentPendingTitle}>Не закрывайте вкладку Studio</div>
+                    <div className={s.paymentPendingDesc}>
+                      После подтверждения платежа фотографии начнут обрабатываться здесь автоматически.
+                      Если платёжная вкладка не открылась или закрылась слишком рано, её можно открыть повторно.
+                    </div>
+
+                    <div className={s.paymentPendingMeta}>
+                      <span>Заказ #{pendingPayment?.invId}</span>
+                      <span>{Number(pendingPayment?.outSum ?? 0).toLocaleString("ru-RU")} ₽</span>
+                    </div>
+
+                    <div className={s.paymentPendingStatus}>
+                      <span className={`${s.paymentPendingDot} ${isCheckingPayment ? s.paymentPendingDotActive : ""}`} />
+                      <span>
+                        {pendingPayment?.isTest
+                          ? "После успешной оплаты платёжная вкладка сама вернёт вас в Studio."
+                          : isCheckingPayment
+                          ? "Проверяем оплату и ждём подтверждение от платёжной системы…"
+                          : "Ждём подтверждение оплаты. Обычно это занимает несколько секунд."}
+                      </span>
+                    </div>
+
+                    <div className={s.paymentPendingActions}>
+                      <button
+                        className={`${s.actBtn} ${s.actBtnPrimary}`}
+                        disabled={isCheckingPayment || pendingPayment?.isTest}
+                        onClick={handleCheckPaymentNow}
+                      >
+                        {pendingPayment?.isTest
+                          ? "Ждём возврат из оплаты"
+                          : isCheckingPayment
+                          ? "Проверяем…"
+                          : "Я оплатил, проверить"}
+                      </button>
+                      {pendingPayment?.paymentUrl && (
+                        <button className={s.actBtn} onClick={handleReopenPayment}>
+                          Открыть оплату снова
+                        </button>
+                      )}
+                    </div>
+
+                    <div className={s.paymentPendingFootnote}>
+                      Даже если после оплаты вас вернули не сюда, Studio всё равно подхватит заказ и продолжит обработку.
+                    </div>
+                  </div>
+                ) : !isPaid ? (
                   <div className={s.empty}>
                     <div className={s.emptyIco}>
                       <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#3D4460" strokeWidth="1.5">
