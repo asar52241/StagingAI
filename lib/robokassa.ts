@@ -5,6 +5,12 @@ const PASS1  = process.env.ROBOKASSA_PASSWORD1!;
 const PASS2  = process.env.ROBOKASSA_PASSWORD2!;
 export const IS_TEST = process.env.ROBOKASSA_TEST === "true";
 
+const TEST_PASS1 = process.env.ROBOKASSA_TEST_PASSWORD1 ?? PASS1;
+const TEST_PASS2 = process.env.ROBOKASSA_TEST_PASSWORD2 ?? PASS2;
+
+const p1 = () => IS_TEST ? TEST_PASS1 : PASS1;
+const p2 = () => IS_TEST ? TEST_PASS2 : PASS2;
+
 function md5(str: string): string {
   return createHash("md5").update(str, "utf8").digest("hex");
 }
@@ -17,9 +23,13 @@ export function generateInvId(): number {
 }
 
 /** Формирует URL для редиректа пользователя на страницу оплаты Робокассы. */
-export function buildPaymentUrl(outSum: number, invId: number, description: string): string {
+export function buildPaymentUrl(outSum: number, invId: number, description: string, receipt?: object): string {
   const outSumStr = outSum.toFixed(2);
-  const sig = md5(`${LOGIN}:${outSumStr}:${invId}:${PASS1}`);
+  const receiptEncoded = receipt ? encodeURIComponent(JSON.stringify(receipt)) : undefined;
+  const sigBase = receiptEncoded
+    ? `${LOGIN}:${outSumStr}:${invId}:${receiptEncoded}:${p1()}`
+    : `${LOGIN}:${outSumStr}:${invId}:${p1()}`;
+  const sig = md5(sigBase);
   const params = new URLSearchParams({
     MerchantLogin: LOGIN,
     OutSum:         outSumStr,
@@ -30,6 +40,9 @@ export function buildPaymentUrl(outSum: number, invId: number, description: stri
     Culture:        "ru",
     Encoding:       "utf-8",
   });
+  if (receiptEncoded) {
+    params.set("Receipt", receiptEncoded);
+  }
   return `https://auth.robokassa.ru/Merchant/Index.aspx?${params}`;
 }
 
@@ -42,7 +55,7 @@ export function verifyResultSignature(
   invId: string,
   signatureValue: string,
 ): boolean {
-  const expected = md5(`${outSum}:${invId}:${PASS2}`);
+  const expected = md5(`${outSum}:${invId}:${p2()}`);
   return expected.toLowerCase() === signatureValue.toLowerCase();
 }
 
@@ -52,7 +65,7 @@ export function verifyResultSignature(
  * Внимание: работает ТОЛЬКО в боевом режиме, не для тестовых платежей.
  */
 export function buildStatusUrl(invId: number): string {
-  const sig = md5(`${LOGIN}:${invId}:${PASS2}`);
+  const sig = md5(`${LOGIN}:${invId}:${p2()}`);
   const params = new URLSearchParams({
     MerchantLogin: LOGIN,
     InvoiceID:     String(invId),   // Bug fix: документация требует InvoiceID
@@ -71,13 +84,13 @@ export function verifySuccessSignature(
   invId: string,
   signatureValue: string,
 ): boolean {
-  const expected = md5(`${outSum}:${invId}:${PASS1}`);
+  const expected = md5(`${outSum}:${invId}:${p1()}`);
   return expected.toLowerCase() === signatureValue.toLowerCase();
 }
 
 /** Подписывает токен оплаченного заказа для cookie sa_paid. */
 export function signPaidToken(invId: number, count: number): string {
-  const sig = md5(`${invId}:${count}:${PASS2}`);
+  const sig = md5(`${invId}:${count}:${p2()}`);
   return `${invId}:${count}:${sig}`;
 }
 
@@ -89,7 +102,7 @@ export function verifyPaidToken(token: string): { invId: number; count: number }
   const invId = parseInt(invIdStr, 10);
   const count = parseInt(countStr, 10);
   if (!invId || !count) return null;
-  const expected = md5(`${invId}:${count}:${PASS2}`);
+  const expected = md5(`${invId}:${count}:${p2()}`);
   if (expected.toLowerCase() !== sig.toLowerCase()) return null;
   return { invId, count };
 }

@@ -8,10 +8,7 @@
 import { NextRequest } from "next/server";
 import { verifyResultSignature } from "@/lib/robokassa";
 
-export async function POST(req: NextRequest) {
-  const body   = await req.text();
-  const params = new URLSearchParams(body);
-
+async function handleResult(params: URLSearchParams) {
   const outSum = params.get("OutSum") ?? "";
   const invId  = params.get("InvId")  ?? "";
   const sig    = params.get("SignatureValue") ?? "";
@@ -24,7 +21,17 @@ export async function POST(req: NextRequest) {
     return new Response("bad sign", { status: 400 });
   }
 
-  // Подпись верна — платёж подтверждён.
-  // Возвращаем ровно то, что требует Робокасса.
   return new Response(`OK${invId}`, { status: 200 });
+}
+
+export async function GET(req: NextRequest) {
+  const params = req.nextUrl.searchParams;
+  return handleResult(params);
+}
+
+export async function POST(req: NextRequest) {
+  const body   = await req.text();
+  const params = new URLSearchParams(body);
+
+  return handleResult(params);
 }

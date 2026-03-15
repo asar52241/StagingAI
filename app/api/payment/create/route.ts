@@ -11,10 +11,22 @@ export async function POST(req: NextRequest) {
   const host    = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";
   const siteUrl = host ? `${proto}://${host}` : LEGAL.siteUrl;
 
+  const receipt = {
+    items: [{
+      name: `Обработка фото — StagingAI`,
+      quantity: count,
+      sum: outSum,
+      payment_method: "full_payment",
+      payment_object: "service",
+      tax: "none",
+    }],
+  };
+
   const paymentUrl = buildPaymentUrl(
     outSum,
     invId,
     `Обработка ${count} фото — StagingAI`,
+    receipt,
   );
 
   // Добавляем SuccessURL и FailURL как GET-параметры.
