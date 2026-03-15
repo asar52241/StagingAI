@@ -729,6 +729,7 @@
   position: relative;
   z-index: 1;
   width: min(100%, 900px);
+  height: min(72vh, 860px);
 }
 .maskStageBottom {
   position: absolute;
@@ -931,6 +932,35 @@
   background: rgba(244,78,110,.1);
 }
 
+.toolValuePill {
+  min-width: 72px;
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(62,71,111,.62);
+  background: rgba(18,21,36,.92);
+  color: rgba(232,236,255,.86);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+  cursor: pointer;
+  transition: all var(--td) var(--ease);
+  box-shadow: 0 12px 28px rgba(0,0,0,.18);
+}
+.toolValuePill:hover {
+  border-color: rgba(109,148,255,.28);
+  color: var(--t1);
+  background: rgba(23,26,43,.96);
+}
+.toolValuePill:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
 .toolSep {
   width: 1px;
   height: 26px;
@@ -984,6 +1014,7 @@
 
   .maskCanvasShell {
     width: min(100%, 760px);
+    height: min(64vh, 700px);
     margin: 0 auto;
   }
 

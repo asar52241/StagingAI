@@ -119,6 +119,9 @@ const STATUS_CLASS: Record<PhotoStatus, string> = {
 let nextId = 0;
 
 export default function StudioPage() {
+  const MIN_MASK_ZOOM = 1;
+  const MAX_MASK_ZOOM = 4;
+
   // ── Core state ───────────────────────────────────────────────────────────────
   const [photos, setPhotos]             = useState<PhotoEntry[]>([]);
   const [mode, setMode]                 = useState<BatchMode>("auto");
@@ -131,6 +134,7 @@ export default function StudioPage() {
   const [maskingIndex, setMaskingIndex]   = useState(0);
   const [maskTool, setMaskTool]           = useState<MaskToolMode>("erase");
   const [maskBrush, setMaskBrush]         = useState(34);
+  const [maskZoom, setMaskZoom]           = useState(1);
   const [maskCanUndo, setMaskCanUndo]     = useState(false);
   const [maskCanRedo, setMaskCanRedo]     = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -425,13 +429,14 @@ export default function StudioPage() {
   // ── Mode switching ────────────────────────────────────────────────────────────
   const handleSetMode = (m: BatchMode) => {
     setMode(m);
-    if (m === "manual") {
+      if (m === "manual") {
       // Jump to first unmasked photo
       const valid = photosRef.current.filter((p) => p.status !== "error");
       const firstUnmasked = valid.findIndex((p) => p.status === "ready");
       setMaskingIndex(firstUnmasked >= 0 ? firstUnmasked : 0);
       setMaskCanUndo(false);
       setMaskCanRedo(false);
+      setMaskZoom(1);
     } else {
       // Clear masks when switching back to auto
       setPhotos((prev) =>
@@ -876,8 +881,8 @@ export default function StudioPage() {
                             aria-label="Отметить зону для удаления"
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M20 20H7L3 16l13-13 7 7-3 3"/>
-                              <path d="M6 17l4-4"/>
+                              <path d="M12 20h9"/>
+                              <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
                             </svg>
                           </button>
                           <button
@@ -887,8 +892,8 @@ export default function StudioPage() {
                             aria-label="Вернуть исходную область"
                           >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M12 20h9"/>
-                              <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                              <path d="M20 20H7L3 16l13-13 7 7-3 3"/>
+                              <path d="M6 17l4-4"/>
                             </svg>
                           </button>
 
@@ -931,6 +936,41 @@ export default function StudioPage() {
                               <path d="M9 6V4h6v2"/>
                             </svg>
                           </button>
+
+                          <span className={s.toolSep} />
+
+                          <button
+                            className={s.toolIconBtn}
+                            disabled={maskZoom <= MIN_MASK_ZOOM}
+                            onClick={() => maskEditorRef.current?.zoomOut()}
+                            title="Уменьшить"
+                            aria-label="Уменьшить"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                              <path d="M5 12h14" />
+                            </svg>
+                          </button>
+                          <button
+                            className={s.toolValuePill}
+                            disabled={maskZoom === 1}
+                            onClick={() => maskEditorRef.current?.resetZoom()}
+                            title="Сбросить масштаб"
+                            aria-label="Сбросить масштаб"
+                          >
+                            {Math.round(maskZoom * 100)}%
+                          </button>
+                          <button
+                            className={s.toolIconBtn}
+                            disabled={maskZoom >= MAX_MASK_ZOOM}
+                            onClick={() => maskEditorRef.current?.zoomIn()}
+                            title="Увеличить"
+                            aria-label="Увеличить"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                              <path d="M5 12h14" />
+                              <path d="M12 5v14" />
+                            </svg>
+                          </button>
                         </div>
 
                         <div className={s.maskBrushPanel}>
@@ -962,13 +1002,14 @@ export default function StudioPage() {
                           brushSize={maskBrush}
                           maskPreset="opaque-white"
                           onHistoryStateChange={({ canUndo: u, canRedo: r }) => { setMaskCanUndo(u); setMaskCanRedo(r); }}
+                          onZoomChange={setMaskZoom}
                         />
                       </div>
 
                       <div className={s.maskStageBottom}>
                         <div className={s.maskStageNote}>
                           <span className={s.maskStageNoteSwatch} />
-                          Подсвеченные зоны будут удалены. Переключение между фото сохраняет текущий черновик.
+                          Подсвеченные зоны будут удалены. Переключение между фото сохраняет текущий черновик. Для zoom используйте кнопки сверху или Ctrl/Cmd + колесо.
                         </div>
                         <div className={s.maskStageMeta}>
                           <span className={`${s.maskStageStatus} ${currentMaskPhoto.status === "masked" ? s.maskStageStatusDone : currentMaskPhoto.maskFile ? s.maskStageStatusDraft : ""}`}>

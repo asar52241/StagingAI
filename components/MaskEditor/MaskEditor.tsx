@@ -15,6 +15,9 @@ export type MaskEditorHandle = {
   undo: () => boolean;
   redo: () => boolean;
   reset: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  resetZoom: () => void;
 };
 
 type MaskEditorProps = {
@@ -25,12 +28,21 @@ type MaskEditorProps = {
   maskPreset?: MaskPreset;
   maskPresetVersion?: number;
   onHistoryStateChange?: (state: { canUndo: boolean; canRedo: boolean }) => void;
+  onZoomChange?: (zoom: number) => void;
 };
 
 type Point = {
   x: number;
   y: number;
 };
+
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 4;
+const ZOOM_STEP = 0.25;
+
+function clampZoom(value: number): number {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number(value.toFixed(2))));
+}
 
 function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -53,10 +65,12 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
     maskPreset = "opaque-white",
     maskPresetVersion = 0,
     onHistoryStateChange,
+    onZoomChange,
   },
   ref,
 ) {
   const MAX_HISTORY_SNAPSHOTS = 21; // Initial state + 20 actions (>= 10 undo steps).
+  const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -64,10 +78,48 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(
     null,
   );
+  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
   const [isDrawing, setIsDrawing] = useState(false);
+  const [zoom, setZoom] = useState(1);
   const previousPointRef = useRef<Point | null>(null);
   const historyRef = useRef<ImageData[]>([]);
   const redoStackRef = useRef<ImageData[]>([]);
+
+  const fitScale = dimensions && viewportSize.width > 0 && viewportSize.height > 0
+    ? Math.min(
+        Math.max(viewportSize.width - 32, 1) / dimensions.width,
+        Math.max(viewportSize.height - 32, 1) / dimensions.height,
+      )
+    : 1;
+  const displayWidth = dimensions ? dimensions.width * fitScale * zoom : 0;
+  const displayHeight = dimensions ? dimensions.height * fitScale * zoom : 0;
+
+  function setZoomLevel(nextZoom: number) {
+    const viewport = viewportRef.current;
+    const clampedZoom = clampZoom(nextZoom);
+
+    if (!viewport || clampedZoom === zoom) {
+      setZoom(clampedZoom);
+      return;
+    }
+
+    const centerX = viewport.scrollLeft + viewport.clientWidth / 2;
+    const centerY = viewport.scrollTop + viewport.clientHeight / 2;
+    const ratioX = viewport.scrollWidth > 0 ? centerX / viewport.scrollWidth : 0.5;
+    const ratioY = viewport.scrollHeight > 0 ? centerY / viewport.scrollHeight : 0.5;
+
+    setZoom(clampedZoom);
+
+    requestAnimationFrame(() => {
+      const nextCenterX = viewport.scrollWidth * ratioX;
+      const nextCenterY = viewport.scrollHeight * ratioY;
+      viewport.scrollLeft = Math.max(0, nextCenterX - viewport.clientWidth / 2);
+      viewport.scrollTop = Math.max(0, nextCenterY - viewport.clientHeight / 2);
+    });
+  }
 
   function syncPreviewFromMask() {
     const maskCanvas = maskCanvasRef.current;
@@ -216,9 +268,45 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
         }
         setHistory([snapshot]);
       },
+      zoomIn() {
+        setZoomLevel(zoom + ZOOM_STEP);
+      },
+      zoomOut() {
+        setZoomLevel(zoom - ZOOM_STEP);
+      },
+      resetZoom() {
+        setZoomLevel(1);
+      },
     }),
-    [maskPreset, onHistoryStateChange],
+    [maskPreset, onHistoryStateChange, zoom],
   );
+
+  useEffect(() => {
+    onZoomChange?.(zoom);
+  }, [onZoomChange, zoom]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const updateViewportSize = () => {
+      setViewportSize({
+        width: viewport.clientWidth,
+        height: viewport.clientHeight,
+      });
+    };
+
+    updateViewportSize();
+
+    const observer = new ResizeObserver(updateViewportSize);
+    observer.observe(viewport);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     const imageCanvas = imageCanvasRef.current;
@@ -280,6 +368,10 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
       URL.revokeObjectURL(objectUrl);
     };
   }, [imageFile, initialMaskFile, maskPreset]);
+
+  useEffect(() => {
+    setZoom(1);
+  }, [imageFile]);
 
   useEffect(() => {
     if (!dimensions || initialMaskFile) {
@@ -415,53 +507,84 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
     }
   }
 
+  function handleViewportWheel(event: React.WheelEvent<HTMLDivElement>) {
+    if (!(event.ctrlKey || event.metaKey)) {
+      return;
+    }
+
+    event.preventDefault();
+    setZoomLevel(zoom + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+  }
+
   return (
     <div className={s.editorRoot}>
       <div
-        className={s.maskCanvasStack}
-        style={
-          dimensions
-            ? ({ aspectRatio: `${dimensions.width} / ${dimensions.height}` } as CSSProperties)
-            : undefined
-        }
+        ref={viewportRef}
+        className={s.editorViewport}
+        onWheel={handleViewportWheel}
       >
-        <canvas
-          ref={imageCanvasRef}
-          className={s.imageCanvas}
-          aria-label="Image layer"
-        />
-        <canvas
-          ref={previewCanvasRef}
-          className={s.maskCanvas}
-          aria-label="Mask preview layer"
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={stopDrawing}
-          onPointerLeave={(event) => {
-            stopDrawing(event);
-            hideCursorPreview();
-          }}
-          onPointerCancel={(event) => {
-            stopDrawing(event);
-            hideCursorPreview();
-          }}
-          onPointerEnter={updateCursorPreview}
-        />
-        <canvas
-          ref={maskCanvasRef}
-          className={s.hiddenMaskCanvas}
-          aria-hidden="true"
-        />
         <div
-          ref={cursorPreviewRef}
-          className={`${s.cursorPreview} ${mode === "erase" ? s.cursorPreviewErase : s.cursorPreviewPaint}`}
-          aria-hidden="true"
-        />
-        {dimensions ? (
-          <div className={s.dimensionsBadge}>
-            {dimensions.width} × {dimensions.height}
+          className={s.editorCanvas}
+          style={
+            displayWidth && displayHeight && viewportSize.width > 0 && viewportSize.height > 0
+              ? ({
+                  width: `${Math.max(displayWidth, viewportSize.width)}px`,
+                  height: `${Math.max(displayHeight, viewportSize.height)}px`,
+                } as CSSProperties)
+              : undefined
+          }
+        >
+          <div
+            className={s.maskCanvasStack}
+            style={
+              dimensions
+                ? ({
+                    width: displayWidth ? `${displayWidth}px` : "100%",
+                    height: displayHeight ? `${displayHeight}px` : undefined,
+                    aspectRatio: `${dimensions.width} / ${dimensions.height}`,
+                  } as CSSProperties)
+                : undefined
+            }
+          >
+            <canvas
+              ref={imageCanvasRef}
+              className={s.imageCanvas}
+              aria-label="Image layer"
+            />
+            <canvas
+              ref={previewCanvasRef}
+              className={s.maskCanvas}
+              aria-label="Mask preview layer"
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={stopDrawing}
+              onPointerLeave={(event) => {
+                stopDrawing(event);
+                hideCursorPreview();
+              }}
+              onPointerCancel={(event) => {
+                stopDrawing(event);
+                hideCursorPreview();
+              }}
+              onPointerEnter={updateCursorPreview}
+            />
+            <canvas
+              ref={maskCanvasRef}
+              className={s.hiddenMaskCanvas}
+              aria-hidden="true"
+            />
+            <div
+              ref={cursorPreviewRef}
+              className={`${s.cursorPreview} ${mode === "erase" ? s.cursorPreviewErase : s.cursorPreviewPaint}`}
+              aria-hidden="true"
+            />
+            {dimensions ? (
+              <div className={s.dimensionsBadge}>
+                {dimensions.width} × {dimensions.height}
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        </div>
       </div>
     </div>
   );
