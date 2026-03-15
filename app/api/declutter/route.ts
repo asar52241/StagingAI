@@ -575,6 +575,13 @@ export async function POST(request: Request) {
       type: getContentType(outputFormat),
     });
 
+    const usage = (result as any).usage as
+      | { input_tokens?: number; output_tokens?: number; total_tokens?: number }
+      | undefined;
+    const inputTokens  = usage?.input_tokens  ?? 0;
+    const outputTokens = usage?.output_tokens ?? 0;
+    const costUsd = (inputTokens * 5 + outputTokens * 40) / 1_000_000;
+
     logStructured("info", {
       request_id: requestId,
       ip,
@@ -594,6 +601,10 @@ export async function POST(request: Request) {
       output_format: outputFormat,
       quality,
       model_size: modelSize,
+      tokens_input:  inputTokens,
+      tokens_output: outputTokens,
+      tokens_total:  usage?.total_tokens ?? (inputTokens + outputTokens),
+      cost_usd:      parseFloat(costUsd.toFixed(6)),
     });
 
     return new Response(body, {
