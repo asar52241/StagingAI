@@ -197,7 +197,7 @@ export default function StudioPage() {
       const pendingRaw = localStorage.getItem("stagingai_pending");
       if (!pendingRaw) return;
       let pending: { invId: number; outSum: string };
-      try { pending = JSON.parse(pendingRaw); } catch { return; }
+      try { pending = JSON.parse(pendingRaw); } catch { localStorage.removeItem("stagingai_pending"); return; }
 
       (async () => {
         try {
@@ -206,8 +206,6 @@ export default function StudioPage() {
           const { paid }  = (await statusRes.json()) as { paid: boolean };
 
           if (!paid) {
-            localStorage.removeItem("stagingai_pending");
-            window.history.replaceState({}, "", "/studio");
             setPaymentError(
               `Оплата ещё не подтверждена. Если деньги были списаны — обратитесь в поддержку: ${LEGAL.email}`,
             );
