@@ -53,38 +53,6 @@ html {
   @apply rounded-2xl border border-slate-200 bg-white p-4;
 }
 
-.panel h2 {
-  @apply m-0 text-base font-semibold text-slate-900;
-}
-
-.muted {
-  @apply mt-2 text-xs text-slate-500;
-}
-
-.maskCanvasStack {
-  @apply relative mt-3 overflow-hidden rounded-xl border border-slate-200 bg-white;
-}
-
-.maskCanvasStack canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-  touch-action: none;
-}
-
-.imageCanvas {
-  position: relative;
-  z-index: 1;
-}
-
-.maskCanvas {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  opacity: 0.45;
-  cursor: crosshair;
-}
-
 @layer utilities {
   .delay-100 {
     animation-delay: 100ms;

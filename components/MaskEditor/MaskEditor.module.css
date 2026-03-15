@@ -1,0 +1,101 @@
+.editorRoot {
+  width: min(100%, 960px);
+  margin: 0 auto;
+}
+
+.maskCanvasStack {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+  border: 1px solid rgba(116, 132, 188, 0.18);
+  background:
+    radial-gradient(circle at 50% 8%, rgba(109, 148, 255, 0.12), transparent 42%),
+    linear-gradient(180deg, rgba(20, 23, 40, 0.92) 0%, rgba(10, 12, 23, 0.98) 100%);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.maskCanvasStack::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent 18% 82%, rgba(255, 255, 255, 0.03)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: auto, 28px 28px, 28px 28px;
+  pointer-events: none;
+}
+
+.maskCanvasStack canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+
+.imageCanvas {
+  position: relative;
+  z-index: 1;
+}
+
+.maskCanvas {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  cursor: none;
+}
+
+.hiddenMaskCanvas {
+  display: none;
+}
+
+.cursorPreview {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: 999px;
+  opacity: 0;
+  transform: translate(-9999px, -9999px);
+  transition:
+    width 0.08s ease,
+    height 0.08s ease,
+    opacity 0.12s ease;
+  backdrop-filter: blur(1.5px);
+}
+
+.cursorPreviewErase {
+  border: 1px solid rgba(255, 167, 145, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(255, 122, 92, 0.16),
+    0 0 24px rgba(255, 122, 92, 0.26);
+  background: rgba(255, 122, 92, 0.12);
+}
+
+.cursorPreviewPaint {
+  border: 1px solid rgba(142, 171, 255, 0.95);
+  box-shadow:
+    0 0 0 1px rgba(79, 114, 255, 0.14),
+    0 0 24px rgba(79, 114, 255, 0.22);
+  background: rgba(79, 114, 255, 0.11);
+}
+
+.dimensionsBadge {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 3;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(116, 132, 188, 0.18);
+  background: rgba(8, 10, 18, 0.66);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
+  color: rgba(232, 236, 255, 0.72);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(12px);
+}

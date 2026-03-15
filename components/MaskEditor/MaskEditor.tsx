@@ -1,6 +1,7 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { type CSSProperties, forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import s from "./MaskEditor.module.css";
 
 export type MaskToolMode = "erase" | "paint";
 export type MaskPreset = "opaque-white" | "fully-transparent";
@@ -58,6 +59,8 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
   const MAX_HISTORY_SNAPSHOTS = 21; // Initial state + 20 actions (>= 10 undo steps).
   const imageCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cursorPreviewRef = useRef<HTMLDivElement | null>(null);
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(
     null,
   );
@@ -65,6 +68,28 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
   const previousPointRef = useRef<Point | null>(null);
   const historyRef = useRef<ImageData[]>([]);
   const redoStackRef = useRef<ImageData[]>([]);
+
+  function syncPreviewFromMask() {
+    const maskCanvas = maskCanvasRef.current;
+    const previewCanvas = previewCanvasRef.current;
+    if (!maskCanvas || !previewCanvas) {
+      return;
+    }
+
+    const previewCtx = previewCanvas.getContext("2d");
+    if (!previewCtx) {
+      return;
+    }
+
+    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+
+    previewCtx.globalCompositeOperation = "source-over";
+    previewCtx.fillStyle = "rgba(255, 122, 92, 0.28)";
+    previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+    previewCtx.globalCompositeOperation = "destination-out";
+    previewCtx.drawImage(maskCanvas, 0, 0);
+    previewCtx.globalCompositeOperation = "source-over";
+  }
 
   function setHistory(nextHistory: ImageData[], clearRedo = true) {
     const trimmed = nextHistory.slice(-MAX_HISTORY_SNAPSHOTS);
@@ -103,11 +128,13 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
       ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      syncPreviewFromMask();
       return;
     }
 
     // Keep fully transparent mask for auto-declutter manual fallback.
     ctx.globalCompositeOperation = "source-over";
+    syncPreviewFromMask();
   }
 
   function commitHistorySnapshot() {
@@ -155,6 +182,7 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
         const nextHistory = historyRef.current.slice(0, -1);
         const previousSnapshot = nextHistory[nextHistory.length - 1];
         ctx.putImageData(previousSnapshot, 0, 0);
+        syncPreviewFromMask();
         setHistory(nextHistory, false);
         return true;
       },
@@ -176,11 +204,12 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
         const stateToRestore = redoStackRef.current[redoStackRef.current.length - 1];
         redoStackRef.current = redoStackRef.current.slice(0, -1);
         ctx.putImageData(stateToRestore, 0, 0);
+        syncPreviewFromMask();
         setHistory([...historyRef.current, stateToRestore], false);
         return true;
       },
       reset() {
-        applyMaskPresetToCanvas("opaque-white");
+        applyMaskPresetToCanvas(maskPreset);
         const snapshot = captureSnapshot();
         if (!snapshot) {
           return;
@@ -188,13 +217,14 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
         setHistory([snapshot]);
       },
     }),
-    [onHistoryStateChange],
+    [maskPreset, onHistoryStateChange],
   );
 
   useEffect(() => {
     const imageCanvas = imageCanvasRef.current;
     const maskCanvas = maskCanvasRef.current;
-    if (!imageCanvas || !maskCanvas) {
+    const previewCanvas = previewCanvasRef.current;
+    if (!imageCanvas || !maskCanvas || !previewCanvas) {
       return;
     }
 
@@ -210,6 +240,8 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
       imageCanvas.height = height;
       maskCanvas.width = width;
       maskCanvas.height = height;
+      previewCanvas.width = width;
+      previewCanvas.height = height;
 
       const imageCtx = imageCanvas.getContext("2d");
       const maskCtx = maskCanvas.getContext("2d");
@@ -228,6 +260,7 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
           maskCtx.clearRect(0, 0, width, height);
           maskCtx.globalCompositeOperation = "source-over";
           maskCtx.drawImage(maskImage, 0, 0, width, height);
+          syncPreviewFromMask();
           URL.revokeObjectURL(maskUrl);
           const initialSnapshot = maskCtx.getImageData(0, 0, width, height);
           setHistory([initialSnapshot]);
@@ -246,10 +279,10 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
     return () => {
       URL.revokeObjectURL(objectUrl);
     };
-  }, [imageFile, maskPreset]);
+  }, [imageFile, initialMaskFile, maskPreset]);
 
   useEffect(() => {
-    if (!dimensions) {
+    if (!dimensions || initialMaskFile) {
       return;
     }
 
@@ -259,10 +292,10 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
       return;
     }
     setHistory([snapshot]);
-  }, [maskPreset, maskPresetVersion, dimensions]);
+  }, [maskPreset, maskPresetVersion, dimensions, initialMaskFile]);
 
   function getCanvasPoint(event: React.PointerEvent<HTMLCanvasElement>): Point | null {
-    const canvas = maskCanvasRef.current;
+    const canvas = previewCanvasRef.current;
     if (!canvas) {
       return null;
     }
@@ -305,6 +338,38 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
     ctx.moveTo(from.x, from.y);
     ctx.lineTo(to.x, to.y);
     ctx.stroke();
+    syncPreviewFromMask();
+  }
+
+  function updateCursorPreview(event: React.PointerEvent<HTMLCanvasElement>) {
+    const canvas = previewCanvasRef.current;
+    const cursorPreview = cursorPreviewRef.current;
+    if (!canvas || !cursorPreview) {
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0) {
+      return;
+    }
+
+    const relativeX = event.clientX - rect.left;
+    const relativeY = event.clientY - rect.top;
+    const visibleBrushSize = Math.max(18, (brushSize / canvas.width) * rect.width);
+
+    cursorPreview.style.opacity = "1";
+    cursorPreview.style.width = `${visibleBrushSize}px`;
+    cursorPreview.style.height = `${visibleBrushSize}px`;
+    cursorPreview.style.transform =
+      `translate(${relativeX}px, ${relativeY}px) translate(-50%, -50%)`;
+  }
+
+  function hideCursorPreview() {
+    if (!cursorPreviewRef.current) {
+      return;
+    }
+
+    cursorPreviewRef.current.style.opacity = "0";
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
@@ -313,6 +378,7 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
       return;
     }
 
+    updateCursorPreview(event);
     setIsDrawing(true);
     previousPointRef.current = point;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -320,6 +386,8 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    updateCursorPreview(event);
+
     if (!isDrawing) {
       return;
     }
@@ -348,37 +416,54 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
   }
 
   return (
-    <section className="panel">
-      <h2>Mask editor (Task 3)</h2>
-      <p className="muted">
-        Draw on the top layer: erase mode makes mask transparent; paint mode restores
-        opaque white.
-      </p>
-
-      {dimensions ? (
-        <p className="muted">
-          Canvas: {dimensions.width} x {dimensions.height}px
-        </p>
-      ) : null}
-
-      <div className="maskCanvasStack">
+    <div className={s.editorRoot}>
+      <div
+        className={s.maskCanvasStack}
+        style={
+          dimensions
+            ? ({ aspectRatio: `${dimensions.width} / ${dimensions.height}` } as CSSProperties)
+            : undefined
+        }
+      >
         <canvas
           ref={imageCanvasRef}
-          className="imageCanvas"
+          className={s.imageCanvas}
           aria-label="Image layer"
         />
         <canvas
-          ref={maskCanvasRef}
-          className="maskCanvas"
-          aria-label="Mask layer"
+          ref={previewCanvasRef}
+          className={s.maskCanvas}
+          aria-label="Mask preview layer"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={stopDrawing}
-          onPointerLeave={stopDrawing}
-          onPointerCancel={stopDrawing}
+          onPointerLeave={(event) => {
+            stopDrawing(event);
+            hideCursorPreview();
+          }}
+          onPointerCancel={(event) => {
+            stopDrawing(event);
+            hideCursorPreview();
+          }}
+          onPointerEnter={updateCursorPreview}
         />
+        <canvas
+          ref={maskCanvasRef}
+          className={s.hiddenMaskCanvas}
+          aria-hidden="true"
+        />
+        <div
+          ref={cursorPreviewRef}
+          className={`${s.cursorPreview} ${mode === "erase" ? s.cursorPreviewErase : s.cursorPreviewPaint}`}
+          aria-hidden="true"
+        />
+        {dimensions ? (
+          <div className={s.dimensionsBadge}>
+            {dimensions.width} × {dimensions.height}
+          </div>
+        ) : null}
       </div>
-    </section>
+    </div>
   );
 });
 

@@ -350,6 +350,12 @@ export default function StudioPage() {
   // Safe clamped index for the mask editor
   const clampedIndex    = Math.min(maskingIndex, Math.max(0, validPhotos.length - 1));
   const currentMaskPhoto = validPhotos[clampedIndex] ?? null;
+  const remainingMaskCount = Math.max(validPhotos.length - maskedCount, 0);
+  const currentMaskStatusLabel = currentMaskPhoto?.status === "masked"
+    ? "Размечено"
+    : currentMaskPhoto?.maskFile
+      ? "Черновик"
+      : "Новый кадр";
 
   // Right panel mode: masking OR results
   const isManualMasking = mode === "manual" && !isPaid && validPhotos.length > 0;
@@ -466,9 +472,33 @@ export default function StudioPage() {
     }
   };
 
+  const persistCurrentMask = async (markAsMasked = false) => {
+    if (!currentMaskPhoto) {
+      return null;
+    }
+
+    const exported = await maskEditorRef.current?.exportMaskPng();
+    if (!exported) {
+      return null;
+    }
+
+    setPhotos((prev) =>
+      prev.map((p) =>
+        p.id === currentMaskPhoto.id
+          ? { ...p, maskFile: exported.file, status: markAsMasked ? "masked" : p.status }
+          : p,
+      ),
+    );
+
+    return exported;
+  };
+
   // ── Thumbnail click (manual mode navigation) ──────────────────────────────────
-  const handleThumbClick = (photo: PhotoEntry) => {
+  const handleThumbClick = async (photo: PhotoEntry) => {
     if (mode === "manual" && !isPaid) {
+      if (currentMaskPhoto && currentMaskPhoto.id !== photo.id) {
+        await persistCurrentMask(false);
+      }
       const idx = validPhotos.findIndex((p) => p.id === photo.id);
       if (idx >= 0) { setMaskingIndex(idx); setMaskCanUndo(false); setMaskCanRedo(false); }
     }
@@ -477,14 +507,8 @@ export default function StudioPage() {
   // ── Mask navigation ───────────────────────────────────────────────────────────
   const handleMaskNext = async () => {
     if (!currentMaskPhoto) return;
-    const exported = await maskEditorRef.current?.exportMaskPng();
+    const exported = await persistCurrentMask(true);
     if (!exported) return;
-
-    setPhotos((prev) =>
-      prev.map((p) =>
-        p.id === currentMaskPhoto.id ? { ...p, maskFile: exported.file, status: "masked" } : p,
-      ),
-    );
 
     if (clampedIndex < validPhotos.length - 1) {
       setMaskingIndex(clampedIndex + 1);
@@ -495,22 +519,14 @@ export default function StudioPage() {
   };
 
   const handleMaskPrev = async () => {
-    if (currentMaskPhoto) {
-      const exported = await maskEditorRef.current?.exportMaskPng();
-      if (exported) {
-        setPhotos((prev) =>
-          prev.map((p) =>
-            p.id === currentMaskPhoto.id ? { ...p, maskFile: exported.file } : p,
-          ),
-        );
-      }
-    }
+    await persistCurrentMask(false);
     setMaskingIndex(Math.max(0, clampedIndex - 1));
     setMaskCanUndo(false);
     setMaskCanRedo(false);
   };
 
-  const handleMaskSkip = () => {
+  const handleMaskSkip = async () => {
+    await persistCurrentMask(false);
     if (clampedIndex < validPhotos.length - 1) {
       setMaskingIndex(clampedIndex + 1);
       setMaskCanUndo(false);
@@ -710,7 +726,7 @@ export default function StudioPage() {
                       <div
                         key={p.id}
                         className={`${s.phThumb} ${isCurrentInEditor ? s.phThumbActive : ""} ${isClickable ? s.phThumbClickable : ""}`}
-                        onClick={isClickable ? () => handleThumbClick(p) : undefined}
+                        onClick={isClickable ? () => { void handleThumbClick(p); } : undefined}
                       >
                         <img src={p.previewUrl} alt={p.name} className={s.thumbImg} />
                         {p.status === "uploading" && <div className={s.shimmer} />}
@@ -851,131 +867,151 @@ export default function StudioPage() {
             /* ── Manual masking workspace ── */
             <div className={s.maskWorkspace}>
 
-              {/* Header with progress */}
               <div className={s.maskHdr}>
                 <div className={s.maskHdrLeft}>
-                  <div className={s.maskHdrTitle}>Разметка масок</div>
+                  <div className={s.maskHdrKicker}>Studio / manual</div>
+                  <div className={s.maskHdrTitle}>Фото {clampedIndex + 1} из {validPhotos.length}</div>
                   <div className={s.maskHdrSub}>
-                    Фото {clampedIndex + 1} из {validPhotos.length}
-                    {maskedCount > 0 && ` · Размечено: ${maskedCount} / ${validPhotos.length}`}
+                    Отметьте мебель и предметы, которые нужно убрать с кадра. Подсвеченные зоны будут удалены при обработке.
                   </div>
                 </div>
-
-                {/* Photo dots (up to 20; beyond that show text only) */}
-                {validPhotos.length <= 20 && (
-                  <div className={s.maskDots}>
-                    {validPhotos.map((p, i) => (
-                      <button
-                        key={p.id}
-                        className={`${s.maskDot} ${p.status === "masked" ? s.maskDotDone : ""} ${i === clampedIndex ? s.maskDotCurrent : ""}`}
-                        onClick={() => { setMaskingIndex(i); setMaskCanUndo(false); setMaskCanRedo(false); }}
-                        title={p.name}
-                      />
-                    ))}
-                  </div>
-                )}
+                <div className={s.maskHdrStats}>
+                  <div className={s.maskHdrBadge}>Размечено {maskedCount} / {validPhotos.length}</div>
+                  <div className={s.maskHdrCaption}>Осталось фото: {remainingMaskCount}</div>
+                </div>
               </div>
 
-              {/* Tool controls */}
-              <div className={s.maskToolbar}>
-                {/* Brush (paint / restore) */}
-                <button
-                  className={`${s.toolIconBtn} ${maskTool === "paint" ? s.toolBtnActive : ""}`}
-                  onClick={() => setMaskTool("paint")}
-                  title="Brush — restore mask"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 20h9"/>
-                    <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
-                  </svg>
-                </button>
-
-                {/* Eraser (erase / mark for removal) */}
-                <button
-                  className={`${s.toolIconBtn} ${maskTool === "erase" ? s.toolBtnActive : ""}`}
-                  onClick={() => setMaskTool("erase")}
-                  title="Eraser — mark area for removal"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 20H7L3 16l13-13 7 7-3 3"/>
-                    <path d="M6 17l4-4"/>
-                  </svg>
-                </button>
-
-                <span className={s.toolSep} />
-
-                {/* Undo */}
-                <button
-                  className={s.toolIconBtn}
-                  disabled={!maskCanUndo}
-                  onClick={() => maskEditorRef.current?.undo()}
-                  title="Undo"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 7v6h6"/>
-                    <path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/>
-                  </svg>
-                </button>
-
-                {/* Redo */}
-                <button
-                  className={s.toolIconBtn}
-                  disabled={!maskCanRedo}
-                  onClick={() => maskEditorRef.current?.redo()}
-                  title="Redo"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 7v6h-6"/>
-                    <path d="M3 17a9 9 0 019-9 9 9 0 016 2.3L21 13"/>
-                  </svg>
-                </button>
-
-                {/* Reset */}
-                <button
-                  className={`${s.toolIconBtn} ${s.toolIconBtnDanger}`}
-                  onClick={() => setShowResetModal(true)}
-                  title="Reset mask"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6"/>
-                    <path d="M19 6l-1 14H6L5 6"/>
-                    <path d="M10 11v6M14 11v6"/>
-                    <path d="M9 6V4h6v2"/>
-                  </svg>
-                </button>
-
-                <label className={s.brushLabel}>
-                  {maskBrush}px
-                  <input type="range" min={8} max={120} value={maskBrush} onChange={(e) => setMaskBrush(Number(e.target.value))} />
-                </label>
-              </div>
-
-              {/* Editor area */}
               <div className={s.maskEditorArea}>
-                {showAllDone ? (
-                  <div className={s.maskAllDone}>
-                    <div className={s.maskAllDoneIco}>
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0ED9A3" strokeWidth="2">
-                        <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
+                <div className={s.maskStage}>
+                  <div className={s.maskStageGlow} />
+
+                  {showAllDone ? (
+                    <div className={s.maskAllDone}>
+                      <div className={s.maskAllDoneIco}>
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0ED9A3" strokeWidth="2">
+                          <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                      <div className={s.maskAllDoneTitle}>Все фото размечены</div>
+                      <div className={s.maskAllDoneDesc}>
+                        {maskedCount} из {validPhotos.length} кадров готовы. Можно переходить к оплате и запуску обработки.
+                      </div>
                     </div>
-                    <div className={s.maskAllDoneTitle}>Все фото размечены!</div>
-                    <div className={s.maskAllDoneDesc}>
-                      {maskedCount} {maskedCount === 1 ? "фото размечено" : "фото размечено"}. Нажмите «Оплатить» на панели слева, чтобы запустить обработку.
-                    </div>
-                  </div>
-                ) : currentMaskPhoto ? (
-                  <MaskEditor
-                    key={currentMaskPhoto.id}
-                    ref={maskEditorRef}
-                    imageFile={currentMaskPhoto.file}
-                    initialMaskFile={currentMaskPhoto.maskFile}
-                    mode={maskTool}
-                    brushSize={maskBrush}
-                    maskPreset="opaque-white"
-                    onHistoryStateChange={({ canUndo: u, canRedo: r }) => { setMaskCanUndo(u); setMaskCanRedo(r); }}
-                  />
-                ) : null}
+                  ) : currentMaskPhoto ? (
+                    <>
+                      <div className={s.maskStageTop}>
+                        <div className={s.maskToolbar}>
+                          <button
+                            className={`${s.toolIconBtn} ${maskTool === "erase" ? s.toolBtnActive : ""}`}
+                            onClick={() => setMaskTool("erase")}
+                            title="Отметить зону для удаления"
+                            aria-label="Отметить зону для удаления"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M20 20H7L3 16l13-13 7 7-3 3"/>
+                              <path d="M6 17l4-4"/>
+                            </svg>
+                          </button>
+                          <button
+                            className={`${s.toolIconBtn} ${maskTool === "paint" ? s.toolBtnActive : ""}`}
+                            onClick={() => setMaskTool("paint")}
+                            title="Вернуть исходную область"
+                            aria-label="Вернуть исходную область"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9"/>
+                              <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                            </svg>
+                          </button>
+
+                          <span className={s.toolSep} />
+
+                          <button
+                            className={s.toolIconBtn}
+                            disabled={!maskCanUndo}
+                            onClick={() => maskEditorRef.current?.undo()}
+                            title="Отменить"
+                            aria-label="Отменить"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 7v6h6"/>
+                              <path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"/>
+                            </svg>
+                          </button>
+                          <button
+                            className={s.toolIconBtn}
+                            disabled={!maskCanRedo}
+                            onClick={() => maskEditorRef.current?.redo()}
+                            title="Повторить"
+                            aria-label="Повторить"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 7v6h-6"/>
+                              <path d="M3 17a9 9 0 019-9 9 9 0 016 2.3L21 13"/>
+                            </svg>
+                          </button>
+                          <button
+                            className={`${s.toolIconBtn} ${s.toolIconBtnDanger}`}
+                            onClick={() => setShowResetModal(true)}
+                            title="Сбросить маску"
+                            aria-label="Сбросить маску"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6"/>
+                              <path d="M19 6l-1 14H6L5 6"/>
+                              <path d="M10 11v6M14 11v6"/>
+                              <path d="M9 6V4h6v2"/>
+                            </svg>
+                          </button>
+                        </div>
+
+                        <div className={s.maskBrushPanel}>
+                          <div className={s.maskBrushHeader}>
+                            <span>Кисть</span>
+                            <strong className={s.maskBrushValue}>{maskBrush}px</strong>
+                          </div>
+                          <label className={s.brushLabel}>
+                            <span>8</span>
+                            <input
+                              type="range"
+                              min={8}
+                              max={120}
+                              value={maskBrush}
+                              onChange={(e) => setMaskBrush(Number(e.target.value))}
+                            />
+                            <span>120</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className={s.maskCanvasShell}>
+                        <MaskEditor
+                          key={currentMaskPhoto.id}
+                          ref={maskEditorRef}
+                          imageFile={currentMaskPhoto.file}
+                          initialMaskFile={currentMaskPhoto.maskFile}
+                          mode={maskTool}
+                          brushSize={maskBrush}
+                          maskPreset="opaque-white"
+                          onHistoryStateChange={({ canUndo: u, canRedo: r }) => { setMaskCanUndo(u); setMaskCanRedo(r); }}
+                        />
+                      </div>
+
+                      <div className={s.maskStageBottom}>
+                        <div className={s.maskStageNote}>
+                          <span className={s.maskStageNoteSwatch} />
+                          Подсвеченные зоны будут удалены. Переключение между фото сохраняет текущий черновик.
+                        </div>
+                        <div className={s.maskStageMeta}>
+                          <span className={`${s.maskStageStatus} ${currentMaskPhoto.status === "masked" ? s.maskStageStatusDone : currentMaskPhoto.maskFile ? s.maskStageStatusDraft : ""}`}>
+                            {currentMaskStatusLabel}
+                          </span>
+                          <span className={s.maskStageName}>{currentMaskPhoto.name}</span>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
               </div>
 
               {/* Reset confirmation modal */}
@@ -1000,21 +1036,24 @@ export default function StudioPage() {
               {/* Navigation footer */}
               {!showAllDone && (
                 <div className={s.maskNavFooter}>
+                  <div className={s.maskNavMeta}>
+                    <span className={s.maskNavMetaStrong}>Режим:</span> ручная студийная разметка
+                  </div>
                   <button
                     className={s.maskNavBtn}
                     disabled={clampedIndex === 0}
-                    onClick={handleMaskPrev}
-                  >← Назад</button>
+                    onClick={() => { void handleMaskPrev(); }}
+                  >← Предыдущее</button>
                   <button
                     className={s.maskNavBtn}
-                    onClick={handleMaskSkip}
+                    onClick={() => { void handleMaskSkip(); }}
                     disabled={clampedIndex >= validPhotos.length - 1}
                   >Пропустить</button>
                   <button
                     className={s.maskNavBtnPrimary}
-                    onClick={handleMaskNext}
+                    onClick={() => { void handleMaskNext(); }}
                   >
-                    {clampedIndex >= validPhotos.length - 1 ? "Готово ✓" : "Следующее →"}
+                    {clampedIndex >= validPhotos.length - 1 ? "Завершить ✓" : "Сохранить и дальше →"}
                   </button>
                 </div>
               )}
