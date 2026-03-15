@@ -187,8 +187,10 @@ export default function StudioPage() {
   // ── Возврат с Робокассы ───────────────────────────────────────────────────────
   useEffect(() => {
     const params    = new URLSearchParams(window.location.search);
-    const paidParam = params.get("paid");
     const invIdStr  = params.get("InvId");
+    // Робокасса может редиректить без paid=, но с InvId+SignatureValue — нормализуем
+    const paidParam = params.get("paid")
+      ?? (invIdStr && params.get("SignatureValue") ? "true" : null);
 
     // Fallback: paid=true без InvId — читаем из localStorage
     if (paidParam === "true" && !invIdStr) {
