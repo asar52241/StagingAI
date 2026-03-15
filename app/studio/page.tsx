@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { LEGAL } from "@/config/legal";
 import { deleteOrder, loadOrder, saveOrder, type StoredPhoto } from "@/lib/photoDB";
+import { CompareSlider } from "@/components/ui/compare-slider";
 import MaskEditor, {
   MaskEditorHandle,
   MaskToolMode,
@@ -102,39 +103,6 @@ async function parseDeclutterError(response: Response): Promise<string> {
     if (d.error?.message) return d.error.message;
   } catch { /* fallback */ }
   return "Не удалось выполнить обработку.";
-}
-
-// ── BeforeAfterSlider ──────────────────────────────────────────────────────────
-function BeforeAfterSlider({ before, after }: { before: string; after: string }) {
-  const [pos, setPos] = useState(50);
-  const dragging = useRef(false);
-  const wrapRef  = useRef<HTMLDivElement>(null);
-
-  const move = useCallback((clientX: number) => {
-    if (!wrapRef.current) return;
-    const rect = wrapRef.current.getBoundingClientRect();
-    setPos(Math.max(2, Math.min(98, ((clientX - rect.left) / rect.width) * 100)));
-  }, []);
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => { if (dragging.current) move(e.clientX); };
-    const onUp   = () => { dragging.current = false; };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup",   onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [move]);
-
-  return (
-    <div ref={wrapRef} className={s.baWrap} onMouseDown={() => { dragging.current = true; }}>
-      <img src={after}  alt="после" className={s.baAfter} />
-      <div className={s.baBefore} style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }}>
-        <img src={before} alt="до" className={s.baBeforeImg} />
-      </div>
-      <div className={s.baDivider} style={{ left: `${pos}%` }} />
-      <span className={`${s.baLbl} ${s.baLblBefore}`}>ДО</span>
-      <span className={`${s.baLbl} ${s.baLblAfter}`}>ПОСЛЕ</span>
-    </div>
-  );
 }
 
 // ── Status maps ────────────────────────────────────────────────────────────────
@@ -1094,7 +1062,15 @@ export default function StudioPage() {
                               </div>
                             </>
                           ) : photo.status === "done" && photo.resultUrl ? (
-                            <BeforeAfterSlider before={photo.previewUrl} after={photo.resultUrl} />
+                            <CompareSlider
+                              beforeSrc={photo.previewUrl}
+                              afterSrc={photo.resultUrl}
+                              beforeAlt={`${photo.name} до обработки`}
+                              afterAlt={`${photo.name} после обработки`}
+                              helperText={null}
+                              variant="studio"
+                              className="h-full"
+                            />
                           ) : (
                             <>
                               <img src={photo.previewUrl} alt="" className={s.resBgImg} />

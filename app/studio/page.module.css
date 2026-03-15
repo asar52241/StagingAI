@@ -549,52 +549,6 @@
 .progBar  { width: 72px; height: 2px; background: var(--bdr); border-radius: 1px; overflow: hidden; }
 .progFill { height: 100%; background: var(--amb); border-radius: 1px; animation: progFill 3.5s ease-out forwards; }
 
-/* ── Before/After Slider ──────────────────────────────────────────────────── */
-.baWrap {
-  position: relative; width: 100%; height: 100%;
-  cursor: ew-resize; user-select: none; overflow: hidden;
-}
-.baAfter {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%;
-  object-fit: cover;
-}
-.baBefore {
-  position: absolute; inset: 0;
-  overflow: hidden;
-}
-.baBeforeImg {
-  width: 100%; height: 100%;
-  object-fit: cover;
-}
-.baDivider {
-  position: absolute; top: 0; bottom: 0;
-  width: 2px;
-  background: rgba(255,255,255,.9);
-  transform: translateX(-50%);
-  z-index: 10;
-  pointer-events: none;
-}
-.baDivider::after {
-  content: '';
-  position: absolute; top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  width: 28px; height: 28px;
-  background: white; border-radius: 50%;
-  box-shadow: 0 2px 8px rgba(0,0,0,.35);
-}
-.baLbl {
-  position: absolute; top: 7px;
-  font-size: 9px; font-weight: 700;
-  letter-spacing: 1px; text-transform: uppercase;
-  padding: 2px 7px;
-  background: rgba(0,0,0,.6);
-  border-radius: 4px; z-index: 11;
-  pointer-events: none;
-}
-.baLblBefore { left: 7px;  color: rgba(255,255,255,.6); }
-.baLblAfter  { right: 7px; color: var(--ok); }
-
 /* ── Active thumbnail in manual mode ─────────────────────────────────────── */
 .phThumbActive {
   border-color: var(--vio) !important;

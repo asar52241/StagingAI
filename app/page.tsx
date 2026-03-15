@@ -121,26 +121,6 @@ const testimonials: Testimonial[] = [
 
 const faqItems: FaqItem[] = [
   {
-    question: "Нужно ли уметь работать в Photoshop?",
-    answer:
-      "Нет. Интерфейс рассчитан на брокеров: загрузили фото, отметили лишнее, получили готовый кадр.",
-  },
-  {
-    question: "Что лучше выбрать: авто или ручную маску?",
-    answer:
-      "Для скорости подойдёт авто-режим. Для главных фото объекта рекомендуем ручную маску — она даёт точный контроль.",
-  },
-  {
-    question: "Сколько длится обработка одного фото?",
-    answer:
-      "Обычно около 1 минуты. Для сложных зон можно сделать дополнительный проход.",
-  },
-  {
-    question: "Можно ли использовать на мобильном?",
-    answer:
-      "Да, сервис работает в браузере на телефоне. Для детальной маски удобнее планшет или ноутбук.",
-  },
-  {
     question: "Какие изображения подходят лучше всего?",
     answer:
       "Светлые, резкие фото без сильного шума. Чем выше качество исходника, тем естественнее результат.",
@@ -604,7 +584,6 @@ function PriceCalculator() {
           <h3 className="mt-1.5 text-xl font-extrabold tracking-tight text-gray-900">
             Рассчитайте стоимость
           </h3>
-          <p className="mt-1 text-sm text-gray-400">1 фото = 1 готовый экспорт</p>
 
           <div className="mt-6 space-y-4">
             <span className="block text-sm font-semibold text-gray-700">
@@ -838,9 +817,6 @@ export default function LandingPage() {
             <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl">
               4 шага от фото до публикации
             </h2>
-            <p className="mt-3 max-w-2xl text-lg text-gray-500">
-              Весь процесс — в браузере, без дополнительных программ.
-            </p>
           </div>
 
           <div className="overflow-hidden rounded-3xl border border-gray-200 shadow-sm">
@@ -879,7 +855,7 @@ export default function LandingPage() {
             Подготовьте фото за ~1 минуту
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-base text-gray-500">
-            Без регистрации. Без карты.
+            Без регистрации.
           </p>
 
           <div className="mt-8">
@@ -897,8 +873,8 @@ export default function LandingPage() {
           <div className="mt-12 overflow-hidden rounded-2xl border border-gray-200 shadow-sm">
             <div className="grid gap-px bg-gray-200 md:grid-cols-2 xl:grid-cols-4">
               {[
-                { emoji: "✨", title: "Просто", desc: "Кисть по объекту — остальное делает AI. Без Photoshop." },
-                { emoji: "⚡", title: "Быстро", desc: "Готовое фото примерно за 1 минуту. Без ожидания и очереди." },
+                { emoji: "✨", title: "Просто", desc: "Отметьте объекты на фото для удаления - остальное сделает ИИ" },
+                { emoji: "⚡", title: "Быстро", desc: "Готовое фото примерно за 1 минуту." },
                 { emoji: "💎", title: "Доступно", desc: "Дешевле, чем услуги дизайнера в десятки раз." },
                 { emoji: "🎯", title: "Точное удаление", desc: "AI удаляет только то, что вы отметили — фон остаётся нетронутым." },
               ].map((f) => (
@@ -924,7 +900,7 @@ export default function LandingPage() {
               Платите за результат
             </h2>
             <p className="mt-3 max-w-2xl text-lg text-gray-500">
-              Без карты. Попробуйте прямо сейчас.
+              Попробуйте прямо сейчас.
             </p>
           </div>
 
@@ -969,7 +945,7 @@ export default function LandingPage() {
               Подготовьте фото объекта к публикации сегодня
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-gray-400">
-              Загрузите первый кадр и проверьте, как чистая подача помещения
+              Загрузите фото и проверьте, как чистая подача помещения
               влияет на отклик в объявлении.
             </p>
 
@@ -990,7 +966,7 @@ export default function LandingPage() {
             </div>
 
             <p className="mt-5 text-xs text-gray-500">
-              Без карты · Результат за ~1 мин
+              Результат за ~1 мин
             </p>
           </div>
         </section>

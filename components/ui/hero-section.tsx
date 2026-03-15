@@ -1,12 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeftRightIcon, ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CompareSlider } from "@/components/ui/compare-slider";
 import { Glow } from "@/components/ui/glow";
 import { Mockup, MockupFrame } from "@/components/ui/mockup";
 import { cn } from "@/lib/utils";
@@ -41,86 +41,6 @@ interface HeroProps {
     afterLabel?: string;
   };
   className?: string;
-}
-
-interface CompareSliderProps {
-  beforeSrc: string;
-  afterSrc: string;
-  beforeAlt: string;
-  afterAlt: string;
-  helperText?: string;
-  beforeLabel?: string;
-  afterLabel?: string;
-}
-
-function CompareSlider({
-  beforeSrc,
-  afterSrc,
-  beforeAlt,
-  afterAlt,
-  helperText = "Потяните ползунок для сравнения",
-  beforeLabel = "До",
-  afterLabel = "После",
-}: CompareSliderProps) {
-  const [position, setPosition] = useState(52);
-
-  return (
-    <div className="relative w-full">
-      <div className="relative aspect-[16/10] overflow-hidden bg-black/5">
-        <img
-          src={beforeSrc}
-          alt={beforeAlt}
-          className="h-full w-full object-cover"
-          loading="eager"
-        />
-        <div
-          className="absolute inset-0 overflow-hidden"
-          style={{ clipPath: `inset(0 ${100 - position}% 0 0)` }}
-        >
-          <img
-            src={afterSrc}
-            alt={afterAlt}
-            className="h-full w-full object-cover"
-            loading="eager"
-          />
-        </div>
-
-        <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/65 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
-          {beforeLabel}
-        </div>
-        <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-gray-900 backdrop-blur-sm">
-          {afterLabel}
-        </div>
-
-        <div
-          className="pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-white/90 shadow-[0_0_8px_rgba(0,0,0,0.32)]"
-          style={{ left: `${position}%` }}
-        />
-        <div
-          className="pointer-events-none absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
-          style={{ left: `${position}%` }}
-        >
-          <div className="grid h-10 w-10 place-items-center rounded-full border-2 border-white bg-gray-900 text-white shadow-lg">
-            <ArrowLeftRightIcon className="h-4 w-4" />
-          </div>
-        </div>
-
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={position}
-          aria-label="Сравнение до и после"
-          onChange={(e) => setPosition(Number(e.target.value))}
-          className="absolute inset-0 z-20 h-full w-full cursor-ew-resize opacity-0"
-        />
-      </div>
-
-      <div className="border-t border-gray-100 bg-gray-50/70 px-4 py-2.5 text-center text-xs text-gray-500">
-        {helperText}
-      </div>
-    </div>
-  );
 }
 
 export function HeroSection({
