@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import Script from "next/script";
 import { YandexMetrikaPageView } from "@/components/YandexMetrikaPageView";
@@ -50,7 +51,9 @@ export default function RootLayout({
             });
           `}
         </Script>
-        <YandexMetrikaPageView />
+        <Suspense fallback={null}>
+          <YandexMetrikaPageView />
+        </Suspense>
         <noscript>
           <div>
             <img
