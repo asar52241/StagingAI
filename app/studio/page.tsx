@@ -1082,6 +1082,12 @@ export default function StudioPage() {
                   <div className={s.rpSub}>{rpSub}</div>
                 </div>
               </div>
+              {isProcessing && (
+                <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-800">
+                  <span className="mt-px shrink-0">⚠️</span>
+                  <span>Не закрывайте эту страницу — обработанные фото появятся здесь. После закрытия восстановить результаты будет невозможно.</span>
+                </div>
+              )}
               <div className={s.rpScroll}>
                 {!isPaid ? (
                   <div className={s.empty}>
