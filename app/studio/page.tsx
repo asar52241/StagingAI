@@ -164,8 +164,9 @@ export default function StudioPage() {
     const paidParam = params.get("paid")
       ?? (invIdStr && params.get("SignatureValue") ? "true" : null);
 
-    // Fallback: paid=true без InvId — читаем из localStorage
-    if (paidParam === "true" && !invIdStr) {
+    // Fallback: paid=true без InvId ИЛИ полностью без параметров (пользователь закрыл вкладку Робокассы)
+    // — в обоих случаях читаем invId из localStorage и проверяем через XML API
+    if (!invIdStr && paidParam !== "false") {
       const pendingRaw = localStorage.getItem("stagingai_pending");
       if (!pendingRaw) return;
       let pending: { invId: number; outSum: string };
@@ -178,6 +179,10 @@ export default function StudioPage() {
           const { paid }  = (await statusRes.json()) as { paid: boolean };
 
           if (!paid) {
+            // На noSig-пути (пользователь вернулся сам) очищаем pending, чтобы не показывать
+            // ошибку при каждом следующем визите. На paid=true-пути оставляем — там перезагрузка
+            // страницы должна повторить попытку.
+            if (!paidParam) localStorage.removeItem("stagingai_pending");
             setPaymentError(
               `Оплата ещё не подтверждена. Если деньги были списаны — обратитесь в поддержку: ${LEGAL.email}`,
             );
