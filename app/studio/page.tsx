@@ -1085,7 +1085,7 @@ export default function StudioPage() {
               {isProcessing && (
                 <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-800">
                   <span className="mt-px shrink-0">⚠️</span>
-                  <span>Не закрывайте эту страницу — обработанные фото появятся здесь. После закрытия восстановить результаты будет невозможно.</span>
+                  <span>Не обновляйте и не закрывайте страницу — идёт обработка фотографий. Результаты появятся здесь по мере готовности.</span>
                 </div>
               )}
               <div className={s.rpScroll}>
