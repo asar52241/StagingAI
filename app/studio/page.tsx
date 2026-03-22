@@ -1180,6 +1180,15 @@ export default function StudioPage() {
               и даёте своё согласие.
             </p>
 
+            <div className="mt-4 flex items-start gap-2.5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <span className="mt-0.5 shrink-0 text-base">⚠️</span>
+              <span>
+                После оплаты нажмите кнопку{" "}
+                <strong className="font-semibold">«Вернуться в магазин»</strong>{" "}
+                на странице Робокассы — только тогда начнётся обработка фотографий.
+              </span>
+            </div>
+
             <label className="mt-5 flex cursor-pointer items-start gap-3">
               <input
                 type="checkbox"
