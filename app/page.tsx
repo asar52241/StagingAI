@@ -6,6 +6,7 @@ import { LEGAL } from "@/config/legal";
 import { FloatingNav } from "@/components/ui/floating-navbar";
 import { HeroSection } from "@/components/ui/hero-section";
 import { PendingPaymentRedirect } from "@/components/PendingPaymentRedirect";
+import { trackMetrikaGoal } from "@/lib/yandexMetrika";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -720,6 +721,10 @@ const floatingNavItems = [
 ];
 
 export default function LandingPage() {
+  const trackLandingUploadClick = (placement: string) => {
+    trackMetrikaGoal("landing_upload_click", { placement });
+  };
+
   return (
     <div className="bg-white text-gray-900">
       <PendingPaymentRedirect />
@@ -754,6 +759,7 @@ export default function LandingPage() {
 
           <Link
             href="/studio"
+            onClick={() => trackLandingUploadClick("header_nav")}
             className="inline-flex items-center rounded-full bg-gray-900 px-4 py-2 text-sm font-semibold text-white ring-4 ring-gray-100 transition hover:-translate-y-0.5 hover:bg-gray-800"
           >
             Загрузить фото
@@ -785,6 +791,7 @@ export default function LandingPage() {
             {
               text: "Загрузить фото",
               href: "/studio",
+              onClick: () => trackLandingUploadClick("hero_primary"),
               variant: "default",
             },
             {
@@ -861,6 +868,7 @@ export default function LandingPage() {
           <div className="mt-8">
             <Link
               href="/studio"
+              onClick={() => trackLandingUploadClick("mid_page_free_try")}
               className="inline-flex items-center justify-center rounded-full bg-blue-600 px-8 py-4 text-sm font-bold text-white shadow-lg shadow-blue-100 transition hover:-translate-y-0.5 hover:bg-blue-700"
             >
               Попробовать бесплатно
@@ -952,6 +960,7 @@ export default function LandingPage() {
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href="/studio"
+                onClick={() => trackLandingUploadClick("bottom_cta")}
                 className="inline-flex items-center rounded-full bg-white px-7 py-3.5 text-sm font-bold text-gray-900 transition hover:-translate-y-0.5 hover:bg-gray-100"
               >
                 Загрузить фото бесплатно

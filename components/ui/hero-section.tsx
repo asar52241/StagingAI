@@ -15,6 +15,7 @@ interface HeroAction {
   text: string;
   href: string;
   icon?: ReactNode;
+  onClick?: () => void;
   variant?: "default" | "glow";
 }
 
@@ -114,12 +115,13 @@ export function HeroSection({
                       href={action.href}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={action.onClick}
                       className="flex items-center gap-2"
                     >
                       {content}
                     </a>
                   ) : (
-                    <Link href={action.href} className="flex items-center gap-2">
+                    <Link href={action.href} onClick={action.onClick} className="flex items-center gap-2">
                       {content}
                     </Link>
                   )}

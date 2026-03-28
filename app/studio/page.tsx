@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { LEGAL } from "@/config/legal";
 import { deleteOrder, loadOrder, saveOrder, type StoredPhoto } from "@/lib/photoDB";
+import { trackMetrikaGoal } from "@/lib/yandexMetrika";
 import { CompareSlider } from "@/components/ui/compare-slider";
 import MaskEditor, {
   MaskEditorHandle,
@@ -143,6 +144,8 @@ export default function StudioPage() {
   const [isCreatingPayment, setIsCreatingPayment] = useState(false);
   const [paymentError, setPaymentError]           = useState<string | null>(null);
   const maskEditorRef = useRef<MaskEditorHandle | null>(null);
+  const readyGoalTrackedRef = useRef(false);
+  const paymentSuccessTrackedRef = useRef(false);
 
   // ── URL cleanup ───────────────────────────────────────────────────────────────
   const photosRef = useRef<PhotoEntry[]>([]);
@@ -211,6 +214,14 @@ export default function StudioPage() {
           setPhotos(restoredPhotos);
           setMode(order.mode as BatchMode);
           setIsPaid(true);
+          if (!paymentSuccessTrackedRef.current) {
+            paymentSuccessTrackedRef.current = true;
+            trackMetrikaGoal("payment_success", {
+              source: "pending_restore",
+              photoCount: restoredPhotos.length,
+              mode: order.mode,
+            });
+          }
           setIsProcessing(true);
           window.history.replaceState({}, "", "/studio");
 
@@ -299,6 +310,14 @@ export default function StudioPage() {
         setPhotos(restoredPhotos);
         setMode(order.mode as BatchMode);
         setIsPaid(true);
+        if (!paymentSuccessTrackedRef.current) {
+          paymentSuccessTrackedRef.current = true;
+          trackMetrikaGoal("payment_success", {
+            source: "success_url",
+            photoCount: restoredPhotos.length,
+            mode: order.mode,
+          });
+        }
         setIsProcessing(true);
         window.history.replaceState({}, "", "/studio"); // убираем только здесь (fix #4)
 
@@ -333,6 +352,18 @@ export default function StudioPage() {
     : currentMaskPhoto?.maskFile
       ? "Черновик"
       : "Новый кадр";
+
+  useEffect(() => {
+    if (isPaid || readyGoalTrackedRef.current || validCount < LEGAL.minPhotosPerOrder) {
+      return;
+    }
+
+    readyGoalTrackedRef.current = true;
+    trackMetrikaGoal("studio_ready_for_checkout", {
+      photoCount: validCount,
+      mode,
+    });
+  }, [isPaid, mode, validCount]);
 
   // Right panel mode: masking OR results
   const isManualMasking = mode === "manual" && !isPaid && validPhotos.length > 0;
@@ -374,6 +405,11 @@ export default function StudioPage() {
     const currentCount = photosRef.current.length;
     const allowed = Array.from(files).slice(0, MAX_PHOTOS - currentCount);
     if (!allowed.length) return;
+
+    trackMetrikaGoal("studio_upload_started", {
+      fileCount: allowed.length,
+      currentCount,
+    });
 
     const entries: PhotoEntry[] = allowed.map((f) => {
       const ALLOWED_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]);
@@ -570,6 +606,11 @@ export default function StudioPage() {
 
   const handlePay = () => {
     if (ctaState !== "ready") return;
+    trackMetrikaGoal("studio_pay_clicked", {
+      photoCount: validCount,
+      totalPrice,
+      mode,
+    });
     // Show consent modal before processing
     setConsentChecked(false);
     setShowConsentModal(true);
@@ -581,6 +622,11 @@ export default function StudioPage() {
     if (!toProcess.length) return;
 
     setIsCreatingPayment(true);
+    trackMetrikaGoal("checkout_started", {
+      photoCount: toProcess.length,
+      totalPrice,
+      mode,
+    });
     try {
       // 1. Создаём платёж на сервере
       const res = await fetch("/api/payment/create", {
@@ -616,6 +662,12 @@ export default function StudioPage() {
       );
 
       // 4. Редиректим на Робокассу
+      trackMetrikaGoal("payment_redirected", {
+        invId,
+        photoCount: toProcess.length,
+        totalPrice,
+        mode,
+      });
       window.location.href = paymentUrl;
     } catch {
       setIsCreatingPayment(false);
