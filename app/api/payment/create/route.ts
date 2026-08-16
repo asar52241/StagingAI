@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildPaymentUrl, generateInvId, IS_TEST } from "@/lib/robokassa";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { LEGAL } from "@/config/legal";
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req);
+  const rateLimit = await checkRateLimit(ip);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again later." },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSeconds) } },
+    );
+  }
+
   const { photoCount } = (await req.json()) as { photoCount: number };
   const count    = Math.max(LEGAL.minPhotosPerOrder, Number(photoCount) || 0);
   const outSum   = count * LEGAL.pricePerPhoto;

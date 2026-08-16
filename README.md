@@ -21,7 +21,8 @@ Mask-based inpainting tool for real-estate photos.
   - limits (`image <= 50MB`, `mask <= 4MB` for `mode=mask`)
   - mask transparency + dimension checks for `mode=mask`
   - invalid `mode` returns `400 INVALID_MODE`
-- In-memory IP rate limit: `10 requests / minute`
+- Server-side paid quota (Upstash Redis): `/api/declutter` atomically decrements the remaining photo count on the paid order, `/api/payment/result` and `/api/payment/status` idempotently create the order record — a single `sa_paid` cookie can no longer be replayed for unlimited generations
+- IP-hash rate limit on `/api/payment/create` (Upstash Redis, short TTL) to curb invoice spam
 - Structured request logging (request id, duration, status, input metadata)
 
 ## Requirements
@@ -38,10 +39,12 @@ Mask-based inpainting tool for real-estate photos.
 npm install
 ```
 
-2. Create `.env.local`:
+2. Create `.env.local` (see `.env.example` for the full list — OpenAI, Robokassa, Upstash Redis):
 
 ```bash
 OPENAI_API_KEY=your_openai_api_key_here
+UPSTASH_REDIS_REST_URL=https://your-instance.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your_upstash_token
 ```
 
 3. Run dev server:

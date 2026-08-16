@@ -88,21 +88,24 @@ export function verifySuccessSignature(
   return expected.toLowerCase() === signatureValue.toLowerCase();
 }
 
-/** Подписывает токен оплаченного заказа для cookie sa_paid. */
-export function signPaidToken(invId: number, count: number): string {
-  const sig = md5(`${invId}:${count}:${p2()}`);
-  return `${invId}:${count}:${sig}`;
+/**
+ * Подписывает токен оплаченного заказа для cookie sa_paid.
+ * Токен несёт только invId — реальная квота (count) живёт в Redis (lib/orders.ts),
+ * не в подписи на клиенте.
+ */
+export function signPaidToken(invId: number): string {
+  const sig = md5(`${invId}:${p2()}`);
+  return `${invId}:${sig}`;
 }
 
-/** Верифицирует cookie sa_paid. Возвращает {invId, count} или null. */
-export function verifyPaidToken(token: string): { invId: number; count: number } | null {
+/** Верифицирует cookie sa_paid. Возвращает invId или null. */
+export function verifyPaidToken(token: string): { invId: number } | null {
   const parts = token.split(":");
-  if (parts.length !== 3) return null;
-  const [invIdStr, countStr, sig] = parts;
+  if (parts.length !== 2) return null;
+  const [invIdStr, sig] = parts;
   const invId = parseInt(invIdStr, 10);
-  const count = parseInt(countStr, 10);
-  if (!invId || !count) return null;
-  const expected = md5(`${invId}:${count}:${p2()}`);
+  if (!invId) return null;
+  const expected = md5(`${invId}:${p2()}`);
   if (expected.toLowerCase() !== sig.toLowerCase()) return null;
-  return { invId, count };
+  return { invId };
 }

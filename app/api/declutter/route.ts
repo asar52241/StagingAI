@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import { verifyPaidToken } from "@/lib/robokassa";
+import { consumeOrder } from "@/lib/orders";
+import { getClientIp } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,9 +21,6 @@ const AUTO_DECLUTTER_PROMPT =
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 const MAX_MASK_BYTES = 4 * 1024 * 1024;
 const SUPPORTED_IMAGE_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]);
-const RATE_LIMIT_MAX_REQUESTS = 10;
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const rateLimitStore = new Map<string, number[]>();
 
 function parsePngMetadata(bytes: Buffer): PngMetadata | null {
   const pngSignature = [
@@ -179,42 +178,6 @@ function errorResponse(
   );
 }
 
-function getClientIp(request: Request): string {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    const first = forwardedFor.split(",")[0]?.trim();
-    if (first) {
-      return first;
-    }
-  }
-
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp) {
-    return realIp.trim();
-  }
-
-  return "unknown";
-}
-
-function checkRateLimit(ip: string, nowMs: number): { allowed: boolean; retryAfterSeconds: number } {
-  const previous = rateLimitStore.get(ip) ?? [];
-  const recent = previous.filter((timestamp) => nowMs - timestamp < RATE_LIMIT_WINDOW_MS);
-
-  if (recent.length >= RATE_LIMIT_MAX_REQUESTS) {
-    rateLimitStore.set(ip, recent);
-    const oldest = recent[0];
-    const retryAfterMs = RATE_LIMIT_WINDOW_MS - (nowMs - oldest);
-    return {
-      allowed: false,
-      retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)),
-    };
-  }
-
-  recent.push(nowMs);
-  rateLimitStore.set(ip, recent);
-  return { allowed: true, retryAfterSeconds: 0 };
-}
-
 function logStructured(
   level: "info" | "warn" | "error",
   payload: Record<string, unknown>,
@@ -347,23 +310,25 @@ export async function POST(request: Request) {
     );
   }
 
-  const rateLimit = checkRateLimit(ip, Date.now());
-  if (!rateLimit.allowed) {
-    return fail(
-      429,
-      "RATE_LIMIT_EXCEEDED",
-      "Too many requests. Please try again in a minute.",
-      "warn",
-      { "Retry-After": String(rateLimit.retryAfterSeconds) },
-    );
-  }
-
-  // Проверяем оплату
+  // Проверяем оплату: подпись cookie подтверждает личность заказа (invId),
+  // а сколько фото ещё разрешено — резервируется атомарно в Redis (lib/orders.ts).
+  // Это закрывает дыру, когда один валидный cookie давал неограниченное число генераций.
   const cookieHeader = request.headers.get("cookie") ?? "";
   const saMatch      = cookieHeader.match(/(?:^|;\s*)sa_paid=([^;]+)/);
   const paidToken    = saMatch ? decodeURIComponent(saMatch[1]) : null;
-  if (!paidToken || !verifyPaidToken(paidToken)) {
+  const paidOrder     = paidToken ? verifyPaidToken(paidToken) : null;
+  if (!paidOrder) {
     return fail(402, "PAYMENT_REQUIRED", "Payment required.");
+  }
+
+  let reservation: { ok: boolean; remaining: number };
+  try {
+    reservation = await consumeOrder(paidOrder.invId, 1);
+  } catch {
+    return fail(500, "INTERNAL_ERROR", "Unexpected server error.", "error");
+  }
+  if (!reservation.ok) {
+    return fail(402, "QUOTA_EXCEEDED", "No remaining paid photos on this order.");
   }
 
   let formData: FormData;

@@ -11,6 +11,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { buildStatusUrl, IS_TEST, signPaidToken, verifySuccessSignature } from "@/lib/robokassa";
+import { ensureOrder } from "@/lib/orders";
 import { LEGAL } from "@/config/legal";
 
 const MAX_INV_ID = 2_000_000_000;
@@ -84,10 +85,21 @@ export async function GET(req: NextRequest) {
 
   count = Math.max(count, LEGAL.minPhotosPerOrder);
 
+  // Страховка на гонку: ResultURL от Робокассы (webhook) может прийти позже,
+  // чем клиент вернётся сюда. ensureOrder идемпотентен — повторные вызовы
+  // этого эндпоинта не пересоздают и не обнуляют квоту.
+  try {
+    await ensureOrder(invId, count);
+  } catch (err) {
+    console.error(JSON.stringify({ scope: "payment/status", error: String(err), invId }));
+    return NextResponse.json({ paid: false, error: "internal error" }, { status: 500 });
+  }
+
   // ── 3. Подписанный cookie sa_paid (httpOnly) ──────────────────────────────────
+  // Токен несёт только invId — реальная квота живёт в Redis (lib/orders.ts).
   // maxAge = 20 минут: достаточно для завершения обработки, ограничивает окно повторного использования
   const response = NextResponse.json({ paid: true, count });
-  response.cookies.set("sa_paid", signPaidToken(invId, count), {
+  response.cookies.set("sa_paid", signPaidToken(invId), {
     httpOnly: true,
     secure:   process.env.NODE_ENV === "production",
     sameSite: "strict",
