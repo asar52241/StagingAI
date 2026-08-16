@@ -111,6 +111,23 @@ export function signPaidToken(invId: number): string {
   return `${invId}:${sig}`;
 }
 
+/** Short-lived token proving that this browser created this exact invoice. */
+export function signPendingPaymentToken(invId: number): string {
+  return `${invId}:${md5(`pending:${invId}:${p2()}`)}`;
+}
+
+export function verifyPendingPaymentToken(token: string): { invId: number } | null {
+  const parts = token.split(":");
+  if (parts.length !== 2) return null;
+  const [invIdStr, sig] = parts;
+  if (!/^\d+$/.test(invIdStr)) return null;
+  const invId = Number(invIdStr);
+  if (!Number.isSafeInteger(invId) || invId <= 0) return null;
+  const expected = md5(`pending:${invId}:${p2()}`);
+  if (expected.toLowerCase() !== sig.toLowerCase()) return null;
+  return { invId };
+}
+
 /** Верифицирует cookie sa_paid. Возвращает invId или null. */
 export function verifyPaidToken(token: string): { invId: number } | null {
   const parts = token.split(":");

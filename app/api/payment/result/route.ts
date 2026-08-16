@@ -8,7 +8,7 @@
 import { NextRequest } from "next/server";
 import { verifyResultSignature } from "@/lib/robokassa";
 import { ensureOrder } from "@/lib/orders";
-import { LEGAL } from "@/config/legal";
+import { photoCountFromAmount } from "@/lib/paymentAmount";
 
 async function handleResult(params: URLSearchParams) {
   const outSum = params.get("OutSum") ?? "";
@@ -26,7 +26,10 @@ async function handleResult(params: URLSearchParams) {
   // Официальный источник истины: фиксируем квоту заказа. Идемпотентно —
   // повторные уведомления Робокассы (retry) не пересоздают/не обнуляют used.
   try {
-    const quota = Math.max(LEGAL.minPhotosPerOrder, Math.round(parseFloat(outSum) / LEGAL.pricePerPhoto));
+    const quota = photoCountFromAmount(outSum);
+    if (!quota) {
+      return new Response("bad amount", { status: 400 });
+    }
     await ensureOrder(parseInt(invId, 10), quota);
   } catch (err) {
     console.error(JSON.stringify({ scope: "payment/result", error: String(err), invId }));

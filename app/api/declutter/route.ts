@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { verifyPaidToken } from "@/lib/robokassa";
-import { consumeOrder } from "@/lib/orders";
+import { commitOrderReservation, releaseOrderReservation, reserveOrder } from "@/lib/orders";
 import { getClientIp } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
@@ -503,11 +503,13 @@ export async function POST(request: Request) {
   const quality = parseOutputQuality(formData.get("quality"));
   const modelSize = pickModelSize(imageDimensions);
 
-  // Атомарно резервируем одно фото непосредственно перед обращением к провайдеру.
-  // Две параллельные валидные обработки не смогут превысить оплаченную квоту.
+  // Reserve quota before calling the provider. It is committed only after an
+  // image is returned, so invalid/provider-rejected requests do not burn a
+  // paid photo and parallel requests cannot exceed the order quota.
+  const reservationId = crypto.randomUUID();
   let reservation: { ok: boolean; remaining: number };
   try {
-    reservation = await consumeOrder(paidOrder.invId, 1);
+    reservation = await reserveOrder(paidOrder.invId, reservationId, 1);
   } catch {
     return fail(500, "INTERNAL_ERROR", "Unexpected server error.", "error");
   }
@@ -516,6 +518,7 @@ export async function POST(request: Request) {
   }
 
   const client = new OpenAI({ apiKey });
+  let providerAccepted = false;
 
   try {
     const prompt = mode === "auto" ? AUTO_DECLUTTER_PROMPT : BASE_PROMPT;
@@ -535,9 +538,11 @@ export async function POST(request: Request) {
     }
 
     const result = await client.images.edit(editPayload as any);
+    providerAccepted = true;
 
     const item = result.data?.[0];
     if (!item) {
+      await releaseOrderReservation(paidOrder.invId, reservationId).catch(() => undefined);
       return fail(
         502,
         "PROVIDER_EMPTY_RESPONSE",
@@ -547,6 +552,15 @@ export async function POST(request: Request) {
     }
 
     const bytes = await decodeResultImage(item, requestId);
+    const committed = await commitOrderReservation(paidOrder.invId, reservationId);
+    if (!committed) {
+      return fail(
+        503,
+        "QUOTA_RESERVATION_EXPIRED",
+        "Processing could not be finalized. Please contact support with the request ID.",
+        "error",
+      );
+    }
     const body = new Blob([Uint8Array.from(bytes)], {
       type: getContentType(outputFormat),
     });
@@ -593,6 +607,12 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof OpenAI.APIError) {
+      // A concrete 4xx response means no image was generated. For 5xx we keep
+      // the reservation until its TTL: the provider may have accepted work
+      // even though the client never received the response.
+      if (error.status && error.status < 500) {
+        await releaseOrderReservation(paidOrder.invId, reservationId).catch(() => undefined);
+      }
       const providerMessage = error.message || "Image processing request failed.";
       return fail(
         502,
@@ -610,6 +630,10 @@ export async function POST(request: Request) {
           provider_status: error.status,
         },
       );
+    }
+
+    if (!providerAccepted) {
+      await releaseOrderReservation(paidOrder.invId, reservationId).catch(() => undefined);
     }
 
     return fail(

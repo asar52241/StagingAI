@@ -21,7 +21,7 @@ Mask-based inpainting tool for real-estate photos.
   - Vercel-safe limits (`image <= 3.5MB`, `mask <= 512KB` for `mode=mask`)
   - mask transparency + dimension checks for `mode=mask`
   - invalid `mode` returns `400 INVALID_MODE`
-- Server-side paid quota (Upstash Redis): `/api/declutter` atomically decrements the remaining photo count immediately before a valid request is sent to the image provider, while invalid uploads do not consume quota. `/api/payment/result` and `/api/payment/status` idempotently create the order record — a single `sa_paid` cookie can no longer be replayed for unlimited generations
+- Server-side paid quota (Upstash Redis): `/api/declutter` atomically reserves a photo before the provider call and commits it only after an image is returned. Invalid uploads and provider-rejected requests do not consume quota; expired in-flight reservations are released automatically. `/api/payment/result` and `/api/payment/status` idempotently create the order record — a single `sa_paid` cookie can no longer be replayed for unlimited generations
 - IP-hash rate limit on `/api/payment/create` (Upstash Redis, short TTL) to curb invoice spam
 - Structured request logging (request id, duration, status, input metadata)
 
@@ -61,6 +61,8 @@ Note: this repository path contains `#` characters (`.../####/...`). `npm run de
 
 ```bash
 npx tsc --noEmit
+npm test
+npm run test:integration
 npm run build
 ```
 
@@ -99,6 +101,6 @@ Notes:
 
 ## Deploy
 
-- Recommended: Vercel (Next.js default). Vercel Functions cap request and response bodies at 4.5MB; this app normalizes browser uploads to fit. To accept original files above that limit, add a direct-to-object-storage upload flow (for example, Vercel Blob client uploads) before calling `/api/declutter`.
+- Recommended: Vercel (Next.js default). Vercel Functions cap request and response bodies at 4.5MB; this app normalizes browser uploads to fit. To accept original files or results above that limit, use object storage with short-lived browser upload/download URLs (for example S3 or R2). A private Vercel Blob alone does not remove the response limit because it must be served through a Function.
 - Set `OPENAI_API_KEY` in project environment variables
 - Keep API key server-only (never expose in client code)

@@ -35,6 +35,7 @@ const MAX_PHOTOS  = LEGAL.maxPhotosPerOrder;
 // A Vercel Function accepts at most a 4.5 MB request body. Leave room for the
 // multipart envelope and the PNG mask, whose canvas output is normally tiny.
 const MAX_IMAGE_UPLOAD_BYTES = 3.5 * 1024 * 1024;
+const MAX_MASK_UPLOAD_BYTES = 512 * 1024;
 const MIN_NORMALIZED_SIDE_PX = 1024;
 
 // ── Image helpers (ported from original) ──────────────────────────────────────
@@ -539,6 +540,10 @@ export default function StudioPage() {
     if (!exported) {
       return null;
     }
+    if (exported.file.size > MAX_MASK_UPLOAD_BYTES) {
+      setPaymentError("Маска этого фото слишком большая для отправки. Уменьшите размер исходного фото и разметьте его заново.");
+      return null;
+    }
 
     setPhotos((prev) =>
       prev.map((p) =>
@@ -666,6 +671,11 @@ export default function StudioPage() {
     if (!consentChecked || isCreatingPayment) return;
     const toProcess = photos.filter((p) => p.status === "ready" || p.status === "masked");
     if (!toProcess.length) return;
+    if (mode === "manual" && toProcess.some((p) => !p.maskFile || p.maskFile.size > MAX_MASK_UPLOAD_BYTES)) {
+      setShowConsentModal(false);
+      setPaymentError("Одна из масок отсутствует или слишком велика. Уменьшите фото и создайте маску заново до оплаты.");
+      return;
+    }
 
     setIsCreatingPayment(true);
     trackMetrikaGoal("checkout_started", {

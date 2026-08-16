@@ -10,9 +10,15 @@
  * При успехе устанавливает httpOnly cookie sa_paid для /api/declutter.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { buildStatusUrl, IS_TEST, signPaidToken, verifySuccessSignature } from "@/lib/robokassa";
+import {
+  buildStatusUrl,
+  IS_TEST,
+  signPaidToken,
+  verifyPendingPaymentToken,
+  verifySuccessSignature,
+} from "@/lib/robokassa";
 import { ensureOrder } from "@/lib/orders";
-import { LEGAL } from "@/config/legal";
+import { photoCountFromAmount } from "@/lib/paymentAmount";
 
 const MAX_INV_ID = 2_000_000_000;
 
@@ -33,9 +39,33 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ paid: false, error: "missing or invalid params" }, { status: 400 });
   }
 
+  if (noSig) {
+    // Test mode has no OpStateExt confirmation, so an unsigned recovery path
+    // would mint paid cookies for arbitrary invoice IDs. Require a signed
+    // SuccessURL there. Production recovery additionally requires this cookie.
+    if (IS_TEST) {
+      return NextResponse.json({ paid: false, error: "unsigned recovery is unavailable in test mode" }, { status: 400 });
+    }
+    const pendingRaw = req.cookies.get("sa_pending")?.value;
+    let pendingToken: string | null = null;
+    try {
+      pendingToken = pendingRaw ? decodeURIComponent(pendingRaw) : null;
+    } catch {
+      pendingToken = null;
+    }
+    const pending = pendingToken ? verifyPendingPaymentToken(pendingToken) : null;
+    if (!pending || pending.invId !== invId) {
+      return NextResponse.json({ paid: false, error: "invalid payment recovery session" }, { status: 403 });
+    }
+  }
+
   // Нормализуем OutSum до 2 знаков после запятой — Робокасса в тест-режиме присылает
   // "150.00", в боевом "150.000000"; подпись всегда считается от нормализованного значения.
-  const outSumNorm = parseFloat(outSumRaw).toFixed(2);
+  const requestedCount = photoCountFromAmount(outSumRaw);
+  if (!requestedCount) {
+    return NextResponse.json({ paid: false, error: "invalid payment amount" }, { status: 400 });
+  }
+  const outSumNorm = (Number(outSumRaw)).toFixed(2);
 
   // ── 1. Верификация подписи SuccessURL ─────────────────────────────────────────
   // Пропускаем только если явно noSig=true (fallback-путь через localStorage)
@@ -72,18 +102,19 @@ export async function GET(req: NextRequest) {
 
       // Сумма из ответа Робокассы (тег IncSum — фактически зачисленная сумма)
       const incSumMatch = xml.match(/<IncSum>([\d.]+)<\/IncSum>/);
-      const verifiedSum = incSumMatch ? parseFloat(incSumMatch[1]) : parseFloat(outSumNorm);
-      count = Math.round(verifiedSum / LEGAL.pricePerPhoto);
+      const verifiedCount = photoCountFromAmount(incSumMatch?.[1] ?? outSumNorm);
+      if (!verifiedCount) {
+        return NextResponse.json({ paid: false, error: "invalid verified payment amount" });
+      }
+      count = verifiedCount;
     } catch (err) {
       const isTimeout = err instanceof Error && err.name === "AbortError";
       return NextResponse.json({ paid: false, error: isTimeout ? "timeout" : "network error" });
     }
   } else {
     // Тест-режим: OpStateExt недоступен — доверяем верифицированной подписи SuccessURL
-    count = Math.round(parseFloat(outSumNorm) / LEGAL.pricePerPhoto);
+    count = requestedCount;
   }
-
-  count = Math.max(count, LEGAL.minPhotosPerOrder);
 
   // Страховка на гонку: ResultURL от Робокассы (webhook) может прийти позже,
   // чем клиент вернётся сюда. ensureOrder идемпотентен — повторные вызовы
@@ -105,6 +136,13 @@ export async function GET(req: NextRequest) {
     sameSite: "strict",
     maxAge:   1_200, // 20 минут
     path:     "/",
+  });
+  response.cookies.set("sa_pending", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: 0,
+    path: "/api/payment/status",
   });
   return response;
 }
