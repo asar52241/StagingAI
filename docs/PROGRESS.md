@@ -28,7 +28,8 @@
 - [x] Обнаружен реальный деплой: https://staging-ai-gamma.vercel.app (прод, старая версия кода без Upstash)
 - [ ] Смёрджить `fix/server-side-quota` в основную ветку и задеплоить
 - [ ] Добавить `UPSTASH_REDIS_REST_URL/TOKEN`, актуальные `ROBOKASSA_*` в переменные окружения Vercel-проекта
-- [ ] Замерить реальный вес `FormData` (фото+маска) против лимита тела запроса Vercel (4.5MB) — `MAX_IMAGE_BYTES=50MB` в коде сейчас нереалистичен
+- [x] Подтверждён жёсткий лимит Vercel Function 4.5MB на request/response; фронтенд сжимает изображения до 3.5MB, сервер ограничивает маску 512KB, ответы запрашиваются в WebP
+- [ ] Если потребуется принимать оригиналы больше 4.5MB: добавить прямую загрузку в object storage (например, Vercel Blob client uploads) и передавать в `/api/declutter` URL/Blob reference
 - [ ] Перевести на Vercel Pro (Hobby нарушает ToS для коммерции с реальными платежами)
 
 ## Фаза 4 — Batch API / эконом-тариф

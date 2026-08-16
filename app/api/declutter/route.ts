@@ -18,8 +18,11 @@ const BASE_PROMPT =
   "Mask-based edit task for a real-estate photo. Edit ONLY inside the transparent mask area (alpha=0). Do NOT modify any non-masked pixels. Remove only the masked object(s) and reconstruct realistic background surfaces in that region (wall, floor, ceiling) with consistent geometry, perspective, texture, shadows, and lighting. Preserve all unmasked content exactly as in the source photo, including rugs/carpets, wall decor, curtains, windows, lamps, and floor color, unless explicitly masked. Keep camera framing and overall color balance unchanged. Photorealistic listing-quality result. No new objects, no text, no logos, no watermark.";
 const AUTO_DECLUTTER_PROMPT =
   "Remove all movable objects from the room: all furniture, appliances, personal items, decorations, clutter, cables, trash, boxes, posters, rugs, plants, and any freestanding items. Keep only the structural elements of the space: walls, floor, ceiling, windows, doors, built-in fixtures, and architectural features. Preserve the original room geometry, perspective, and camera angle. Match the existing lighting and shadows naturally. The result must look like a realistic real-estate listing photo of an empty room. Do not add new objects, furniture, text, logos, or watermarks. Photorealistic.";
-const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
-const MAX_MASK_BYTES = 4 * 1024 * 1024;
+// Vercel Functions have a hard 4.5 MB request-body limit. Reserve space for
+// multipart framing and the mask; larger requests are rejected by Vercel before
+// this route can run.
+const MAX_IMAGE_BYTES = Math.floor(3.5 * 1024 * 1024);
+const MAX_MASK_BYTES = 512 * 1024;
 const SUPPORTED_IMAGE_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]);
 
 function parsePngMetadata(bytes: Buffer): PngMetadata | null {
@@ -403,7 +406,7 @@ export async function POST(request: Request) {
     return fail(
       400,
       "IMAGE_TOO_LARGE",
-      "Source image is too large (max 50MB).",
+      "Source image is too large (max 3.5MB).",
       "warn",
       undefined,
       { image_bytes: image.size },
@@ -414,7 +417,7 @@ export async function POST(request: Request) {
     return fail(
       400,
       "MASK_TOO_LARGE",
-      "Mask is too large (max 4MB).",
+      "Mask is too large (max 512KB).",
       "warn",
       undefined,
       { mask_bytes: mask.size },

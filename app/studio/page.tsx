@@ -32,6 +32,10 @@ interface PhotoEntry {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const MAX_PHOTOS  = LEGAL.maxPhotosPerOrder;
+// A Vercel Function accepts at most a 4.5 MB request body. Leave room for the
+// multipart envelope and the PNG mask, whose canvas output is normally tiny.
+const MAX_IMAGE_UPLOAD_BYTES = 3.5 * 1024 * 1024;
+const MIN_NORMALIZED_SIDE_PX = 1024;
 
 // ── Image helpers (ported from original) ──────────────────────────────────────
 async function normalizeImageFile(
@@ -43,23 +47,63 @@ async function normalizeImageFile(
     const img = new Image();
     img.onload = () => {
       const ow = img.naturalWidth, oh = img.naturalHeight;
-      const scale = Math.min(1, maxSidePx / Math.max(ow, oh));
-      const w = Math.max(1, Math.round(ow * scale));
-      const h = Math.max(1, Math.round(oh * scale));
       URL.revokeObjectURL(url);
-      if (scale === 1) { resolve({ file: sourceFile, width: w, height: h }); return; }
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) { reject(new Error("Canvas error")); return; }
-      ctx.drawImage(img, 0, 0, w, h);
-      const mime = sourceFile.type === "image/png" ? "image/png"
-        : sourceFile.type === "image/webp" ? "image/webp"
-        : "image/jpeg";
-      canvas.toBlob((blob) => {
-        if (!blob) { reject(new Error("Blob error")); return; }
-        resolve({ file: new File([blob], sourceFile.name, { type: mime }), width: w, height: h });
-      }, mime, 0.92);
+
+      const originalMaxSide = Math.max(ow, oh);
+      const canKeepOriginal =
+        originalMaxSide <= maxSidePx &&
+        sourceFile.size <= MAX_IMAGE_UPLOAD_BYTES &&
+        (sourceFile.type === "image/jpeg" || sourceFile.type === "image/jpg" || sourceFile.type === "image/png");
+      if (canKeepOriginal) {
+        resolve({ file: sourceFile, width: ow, height: oh });
+        return;
+      }
+
+      const encodeJpeg = (targetMaxSide: number, quality: number) => new Promise<{
+        blob: Blob;
+        width: number;
+        height: number;
+      }>((resolveBlob, rejectBlob) => {
+        const scale = Math.min(1, targetMaxSide / originalMaxSide);
+        const width = Math.max(1, Math.round(ow * scale));
+        const height = Math.max(1, Math.round(oh * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { rejectBlob(new Error("Canvas error")); return; }
+        // JPEG has no alpha; fill it before drawing transparent PNG/WebP sources.
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          if (!blob) { rejectBlob(new Error("Blob error")); return; }
+          resolveBlob({ blob, width, height });
+        }, "image/jpeg", quality);
+      });
+
+      void (async () => {
+        try {
+          let targetMaxSide = Math.min(maxSidePx, originalMaxSide);
+          let encoded = await encodeJpeg(targetMaxSide, 0.9);
+          for (let attempt = 0; encoded.blob.size > MAX_IMAGE_UPLOAD_BYTES && attempt < 7; attempt += 1) {
+            if (targetMaxSide <= MIN_NORMALIZED_SIDE_PX) break;
+            targetMaxSide = Math.max(MIN_NORMALIZED_SIDE_PX, Math.floor(targetMaxSide * 0.8));
+            encoded = await encodeJpeg(targetMaxSide, Math.max(0.72, 0.9 - (attempt + 1) * 0.03));
+          }
+          if (encoded.blob.size > MAX_IMAGE_UPLOAD_BYTES) {
+            throw new Error("Не удалось сжать фото для отправки. Выберите файл меньшего размера.");
+          }
+          const name = sourceFile.name.replace(/\.[^.]+$/, "") || "photo";
+          resolve({
+            file: new File([encoded.blob], `${name}.jpg`, { type: "image/jpeg" }),
+            width: encoded.width,
+            height: encoded.height,
+          });
+        } catch (error) {
+          reject(error);
+        }
+      })();
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Load error")); };
     img.src = url;
@@ -562,7 +606,9 @@ export default function StudioPage() {
       const formData = new FormData();
       formData.append("image", photo.file);
       formData.append("mode",  batchMode === "manual" ? "mask" : "auto");
-      formData.append("output_format", "png");
+      // WebP keeps the function response safely below Vercel's 4.5 MB cap more
+      // often than PNG; the browser still downloads the original rendered size.
+      formData.append("output_format", "webp");
       formData.append("quality", "high");
       if (batchMode === "manual" && photo.maskFile) formData.append("mask", photo.maskFile);
 
