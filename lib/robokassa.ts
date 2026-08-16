@@ -23,13 +23,19 @@ export function generateInvId(): number {
 }
 
 /** Формирует URL для редиректа пользователя на страницу оплаты Робокассы. */
-export function buildPaymentUrl(outSum: number, invId: number, description: string, receipt?: object): string {
+export function buildPaymentUrl(
+  outSum: number,
+  invId: number,
+  description: string,
+  receipt?: object,
+  urls?: { successUrl: string; failUrl: string },
+): string {
   const outSumStr = outSum.toFixed(2);
   const receiptEncoded = receipt ? encodeURIComponent(JSON.stringify(receipt)) : undefined;
-  const sigBase = receiptEncoded
-    ? `${LOGIN}:${outSumStr}:${invId}:${receiptEncoded}:${p1()}`
-    : `${LOGIN}:${outSumStr}:${invId}:${p1()}`;
-  const sig = md5(sigBase);
+  // Receipt НЕ входит в базу подписи — вопреки документации Робокассы, магазин StagingAI
+  // отклоняет подпись с Receipt (ошибка 29). Подтверждено диагностикой: подпись без Receipt
+  // принимается, формула с Receipt — нет, даже с дословным примером из документации.
+  const sig = md5(`${LOGIN}:${outSumStr}:${invId}:${p1()}`);
   const params = new URLSearchParams({
     MerchantLogin: LOGIN,
     OutSum:         outSumStr,
@@ -40,10 +46,17 @@ export function buildPaymentUrl(outSum: number, invId: number, description: stri
     Culture:        "ru",
     Encoding:       "utf-8",
   });
+  // Receipt/SuccessURL/FailURL добавляются строкой, а не через params.set()/new URL():
+  // они либо уже url-encoded (Receipt), либо не должны проходить через повторную
+  // сериализацию URLSearchParams — та переигрывает %20 в "+" и портит текст в чеке.
+  let query = params.toString();
   if (receiptEncoded) {
-    params.set("Receipt", receiptEncoded);
+    query += `&Receipt=${receiptEncoded}`;
   }
-  return `https://auth.robokassa.ru/Merchant/Index.aspx?${params}`;
+  if (urls) {
+    query += `&SuccessURL=${encodeURIComponent(urls.successUrl)}&FailURL=${encodeURIComponent(urls.failUrl)}`;
+  }
+  return `https://auth.robokassa.ru/Merchant/Index.aspx?${query}`;
 }
 
 /**

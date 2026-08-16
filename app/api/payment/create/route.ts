@@ -32,20 +32,18 @@ export async function POST(req: NextRequest) {
     }],
   };
 
+  // SuccessURL/FailURL передаются в buildPaymentUrl напрямую (не дописываются через
+  // new URL()+searchParams.set() постфактум) — тот путь портил кодировку Receipt.
+  // Робокасса автоматически прибавит OutSum и InvId к этим URL при редиректе.
+  // Также убедитесь, что в личном кабинете Робокассы включена опция
+  // «Разрешить переопределение SuccessURL и FailURL».
   const paymentUrl = buildPaymentUrl(
     outSum,
     invId,
     `Обработка ${count} фото — StagingAI`,
     receipt,
+    { successUrl: `${siteUrl}/studio?paid=true`, failUrl: `${siteUrl}/studio?paid=false` },
   );
 
-  // Добавляем SuccessURL и FailURL как GET-параметры.
-  // Робокасса автоматически прибавит OutSum и InvId к этим URL при редиректе.
-  // Также убедитесь, что в личном кабинете Робокассы включена опция
-  // «Разрешить переопределение SuccessURL и FailURL».
-  const url = new URL(paymentUrl);
-  url.searchParams.set("SuccessURL", `${siteUrl}/studio?paid=true`);
-  url.searchParams.set("FailURL",    `${siteUrl}/studio?paid=false`);
-
-  return NextResponse.json({ paymentUrl: url.toString(), invId, outSum, isTest: IS_TEST });
+  return NextResponse.json({ paymentUrl, invId, outSum, isTest: IS_TEST });
 }
