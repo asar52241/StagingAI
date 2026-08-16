@@ -8,6 +8,7 @@
 - [x] `app/api/payment/result/route.ts` — пишет заказ при вебхуке Робокассы
 - [x] `app/api/payment/status/route.ts` — идемпотентно создаёт заказ, cookie несёт только `invId`
 - [x] `app/api/declutter/route.ts` — списывает 1 фото из квоты вместо простой проверки подписи
+- [x] Квота списывается только после полной валидации загрузки, непосредственно перед вызовом OpenAI; некорректная форма не сжигает оплаченный запуск
 - [x] `lib/robokassa.ts` — `signPaidToken`/`verifyPaidToken` упрощены до одного `invId`
 - [x] `config/legal.ts` — `minPhotosPerOrder: 3 → 1`
 - [x] Живой тест `lib/orders.ts` на реальном Upstash — квота считается верно, идемпотентность подтверждена

@@ -310,25 +310,20 @@ export async function POST(request: Request) {
     );
   }
 
-  // Проверяем оплату: подпись cookie подтверждает личность заказа (invId),
-  // а сколько фото ещё разрешено — резервируется атомарно в Redis (lib/orders.ts).
-  // Это закрывает дыру, когда один валидный cookie давал неограниченное число генераций.
+  // Проверяем оплату. Саму квоту списываем только после разбора и полной
+  // валидации multipart-формы: ошибочная загрузка не должна сжигать оплаченный
+  // запуск.
   const cookieHeader = request.headers.get("cookie") ?? "";
   const saMatch      = cookieHeader.match(/(?:^|;\s*)sa_paid=([^;]+)/);
-  const paidToken    = saMatch ? decodeURIComponent(saMatch[1]) : null;
+  let paidToken: string | null = null;
+  try {
+    paidToken = saMatch ? decodeURIComponent(saMatch[1]) : null;
+  } catch {
+    return fail(402, "PAYMENT_REQUIRED", "Payment required.");
+  }
   const paidOrder     = paidToken ? verifyPaidToken(paidToken) : null;
   if (!paidOrder) {
     return fail(402, "PAYMENT_REQUIRED", "Payment required.");
-  }
-
-  let reservation: { ok: boolean; remaining: number };
-  try {
-    reservation = await consumeOrder(paidOrder.invId, 1);
-  } catch {
-    return fail(500, "INTERNAL_ERROR", "Unexpected server error.", "error");
-  }
-  if (!reservation.ok) {
-    return fail(402, "QUOTA_EXCEEDED", "No remaining paid photos on this order.");
   }
 
   let formData: FormData;
@@ -504,6 +499,19 @@ export async function POST(request: Request) {
   const outputFormat = parseOutputFormat(formData.get("output_format"));
   const quality = parseOutputQuality(formData.get("quality"));
   const modelSize = pickModelSize(imageDimensions);
+
+  // Атомарно резервируем одно фото непосредственно перед обращением к провайдеру.
+  // Две параллельные валидные обработки не смогут превысить оплаченную квоту.
+  let reservation: { ok: boolean; remaining: number };
+  try {
+    reservation = await consumeOrder(paidOrder.invId, 1);
+  } catch {
+    return fail(500, "INTERNAL_ERROR", "Unexpected server error.", "error");
+  }
+  if (!reservation.ok) {
+    return fail(402, "QUOTA_EXCEEDED", "No remaining paid photos on this order.");
+  }
+
   const client = new OpenAI({ apiKey });
 
   try {

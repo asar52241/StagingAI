@@ -21,7 +21,7 @@ Mask-based inpainting tool for real-estate photos.
   - limits (`image <= 50MB`, `mask <= 4MB` for `mode=mask`)
   - mask transparency + dimension checks for `mode=mask`
   - invalid `mode` returns `400 INVALID_MODE`
-- Server-side paid quota (Upstash Redis): `/api/declutter` atomically decrements the remaining photo count on the paid order, `/api/payment/result` and `/api/payment/status` idempotently create the order record — a single `sa_paid` cookie can no longer be replayed for unlimited generations
+- Server-side paid quota (Upstash Redis): `/api/declutter` atomically decrements the remaining photo count immediately before a valid request is sent to the image provider, while invalid uploads do not consume quota. `/api/payment/result` and `/api/payment/status` idempotently create the order record — a single `sa_paid` cookie can no longer be replayed for unlimited generations
 - IP-hash rate limit on `/api/payment/create` (Upstash Redis, short TTL) to curb invoice spam
 - Structured request logging (request id, duration, status, input metadata)
 
