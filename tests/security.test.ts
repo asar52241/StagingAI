@@ -145,7 +145,14 @@ test("unknown/deleted orders cannot be resurrected from payment tokens", async (
 for (const body of ['{', 'null', '{}', '{"photoCount":"3"}', '{"photoCount":-1}', '{"photoCount":3.5}', '{"photoCount":31}']) {
   test(`checkout rejects malformed input ${body}`, async () => assert.equal((await createPayment(jsonRequest(body))).status, 400));
 }
-test("checkout uses configured origin and signs its return URLs", async () => {
+test("checkout accepts one photo at the configured minimum", async () => {
+  const response = await createPayment(jsonRequest('{"photoCount":1}'));
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.outSum, 50);
+  assert.equal((await getOrder(data.invId))?.count, 1);
+});
+test("checkout uses configured origin and the merchant's verified signature format", async () => {
   const request = jsonRequest('{"photoCount":3}');
   request.headers.set("x-forwarded-host", "evil.test");
   request.headers.set("x-forwarded-proto", "http");
@@ -153,10 +160,11 @@ test("checkout uses configured origin and signs its return URLs", async () => {
   assert.equal(response.status, 200);
   const data = await response.json();
   const url = new URL(data.paymentUrl);
-  assert.equal(url.searchParams.get("SuccessUrl2"), "https://staging-ai.test/studio?paid=true");
+  assert.equal(url.searchParams.get("SuccessURL"), "https://staging-ai.test/studio?paid=true");
   const params = url.searchParams;
-  const base = `test-merchant:150.00:${data.invId}:${params.get("Receipt")}:${params.get("SuccessUrl2")}:GET:${params.get("FailUrl2")}:GET:test-password-1`;
+  const base = `test-merchant:150.00:${data.invId}:test-password-1`;
   assert.equal(params.get("SignatureValue"), md5(base));
+  assert.equal(JSON.parse(params.get("Receipt") ?? "").items[0].sum, 150);
   assert.match(response.headers.get("set-cookie") ?? "", /HttpOnly/);
 });
 test("invoice knowledge alone cannot authorize status checks", async () => {
@@ -201,6 +209,14 @@ test("invalid images do not consume quota", async () => {
   const order = await paidOrder();
   assert.equal((await declutter(upload(order, Buffer.from("fake")))).status, 400);
   assert.deepEqual((await getOrder(order.invId))?.photos, {});
+});
+test("uploads exceeding Vercel's image budget do not consume quota", async () => {
+  const order = await paidOrder();
+  const image = Buffer.concat([png, Buffer.alloc(Math.floor(3.5 * 1024 * 1024) + 1 - png.length)]);
+  const response = await declutter(upload(order, image));
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, "IMAGE_TOO_LARGE");
+  assert.equal(Object.keys((await getOrder(order.invId))!.photos).length, 0);
 });
 test("oversized image dimensions are rejected before provider call", async () => {
   const order = await paidOrder();

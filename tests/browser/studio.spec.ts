@@ -22,6 +22,54 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("large PNG is compressed before a one-photo checkout and fits Vercel's request limit", async ({ page }) => {
+  await page.goto("/studio");
+  const files = await images(page);
+  const noisyPng = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1800; canvas.height = 1800;
+    const ctx = canvas.getContext("2d")!;
+    const pixels = ctx.createImageData(1800, 1800);
+    let seed = 12345;
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5;
+      pixels.data[i] = seed & 255;
+      pixels.data[i + 1] = (seed >>> 8) & 255;
+      pixels.data[i + 2] = (seed >>> 16) & 255;
+      pixels.data[i + 3] = 255;
+    }
+    ctx.putImageData(pixels, 0, 0);
+    return canvas.toDataURL("image/png").split(",")[1];
+  });
+  const source = Buffer.from(noisyPng, "base64");
+  expect(source.length).toBeGreaterThan(3.5 * 1024 * 1024);
+  await page.route("**/api/payment/create", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ photoCount: 1 });
+    await route.fulfill({ json: { invId: 321, outSum: 50, paymentUrl: "http://127.0.0.1:3310/studio?paid=true&InvId=321&OutSum=50.00&SignatureValue=test" } });
+  });
+  await page.route("**/api/payment/status?**", (route) => route.fulfill({ json: { paid: true, count: 1 } }));
+  let processed = false;
+  await page.route("**/api/declutter", async (route) => {
+    const body = route.request().postDataBuffer()!;
+    expect(body.length).toBeLessThan(4_500_000);
+    const form = await new Response(Uint8Array.from(body), {
+      headers: { "Content-Type": (await route.request().headerValue("content-type"))! },
+    }).formData();
+    const image = form.get("image") as File;
+    expect(image.type).toBe("image/jpeg");
+    expect(image.size).toBeLessThanOrEqual(3.5 * 1024 * 1024);
+    expect(form.get("output_format")).toBe("webp");
+    processed = true;
+    await route.fulfill({ contentType: "image/png", body: files[0].buffer });
+  });
+  await page.locator('input[type="file"]').first().setInputFiles({ name: "large.png", mimeType: "image/png", buffer: source });
+  await page.getByRole("button", { name: "Оплатить 50 ₽ и запустить" }).click();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: /Подтвердить/ }).click();
+  await expect(page.getByRole("button", { name: "↓ Скачать", disabled: false })).toHaveCount(1);
+  expect(processed).toBe(true);
+});
+
 test("WebP/GIF normalize, checkout restores, and failed photos retry without rerunning completed photos", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -96,6 +144,8 @@ test("mask history restores alpha exactly across undo and redo", async ({ page }
   await expect(preview).toBeVisible();
   const mask = page.locator('canvas[aria-hidden="true"]');
   const snapshot = () => mask.evaluate((element: HTMLCanvasElement) => Array.from(element.getContext("2d")!.getImageData(0, 0, element.width, element.height).data));
+  // The visible canvas mounts before its image.onload initializes the mask.
+  await expect.poll(async () => (await snapshot()).every((value) => value === 255)).toBe(true);
   const initial = await snapshot();
   expect(initial.every((value) => value === 255)).toBe(true);
   const box = (await preview.boundingBox())!;

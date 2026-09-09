@@ -1,6 +1,6 @@
 # StagingAI
 
-Next.js 15 + React 18 + TypeScript application for automatic decluttering and masked editing of real-estate photos.
+Next.js 16 + React 19 + TypeScript application for automatic decluttering and masked editing of real-estate photos.
 
 ## Run locally
 
@@ -18,8 +18,8 @@ When `ROBOKASSA_TEST=true`, **separate** test passwords are required; production
 
 ## Payment and processing
 
-1. `/api/payment/create` validates an integer photo count (3–30), calculates the advertised package price, stores the order and sets an HttpOnly owner cookie.
-2. Configure Robokassa's ResultURL as `https://YOUR_DOMAIN/api/payment/result`. The signed callback persists payment before responding `OK{InvId}`. Configure the merchant signature algorithm as MD5 and the standard success/failure addresses as `/studio?paid=true` and `/studio?paid=false`, using GET. Per-invoice `SuccessUrl2`/`FailUrl2` are included in the signature.
+1. `/api/payment/create` validates an integer photo count (1–30), calculates the advertised package price, stores the order and sets an HttpOnly owner cookie.
+2. Configure Robokassa's ResultURL as `https://YOUR_DOMAIN/api/payment/result`. The signed callback persists payment before responding `OK{InvId}`. Configure the merchant signature algorithm as MD5 and the standard success/failure addresses as `/studio?paid=true` and `/studio?paid=false`, using GET. The merchant-verified payment signature excludes `Receipt`; the receipt and configured `SuccessURL`/`FailURL` are encoded once. See [the receipt investigation](docs/robokassa-receipt-issue.md).
 3. `/api/payment/status` requires the order's owner cookie. In live mode, an unconfirmed order is checked through OpStateExt, including the exact merchant `OutSum`. Test mode requires a valid SuccessURL signature or a previously verified ResultURL. Browser-supplied amounts never grant credits.
 4. Payment access lasts 24 hours from the first confirmation, bounded by the order's seven-day lifetime. Rechecking a payment never resets expiry or spent attempts.
 5. Each distinct source photo can be processed twice (initial attempt + one retry). The number of distinct sources is limited by the order. Reservations are atomic across server instances. Provider errors/timeouts also consume an attempt because billing may already have occurred. Automatic SDK retries are disabled.
@@ -49,13 +49,13 @@ Before replacing the old payment implementation, finish existing paid orders or 
 
 `POST /api/declutter` takes multipart form data and a valid `sa_paid` HttpOnly cookie:
 
-- `image`: JPEG/PNG, up to 50 MiB, maximum side 3000 px.
+- `image`: JPEG/PNG, up to 3.5 MiB, maximum side 3000 px.
 - `mode`: `mask` (default) or `auto`.
-- `mask`: required for `mask`; PNG with alpha/transparency support, same dimensions, up to 4 MiB.
+- `mask`: required for `mask`; PNG with alpha/transparency support, same dimensions, up to 512 KiB.
 - `output_format`: `png` (default), `jpeg`, `webp`.
 - `quality`: `high` (default), `medium`.
 
-The browser accepts JPEG/PNG/WebP/GIF and always re-encodes before upload, stripping metadata. WebP/GIF are converted to PNG; animated files produce a still image. The request body is bounded while streaming (54 MiB + 64 KiB, 30-second upload deadline), before multipart parsing. Images are forwarded with fixed filenames. Generated images and API responses use `Cache-Control: no-store`.
+The browser accepts JPEG/PNG/WebP/GIF and always re-encodes before upload, stripping metadata. Small WebP/GIF inputs are converted to PNG; large images are compressed to JPEG and reduced in size to fit the 3.5 MiB upload budget. Animated files produce a still image. The studio requests WebP results to reduce response size. The request body is bounded while streaming (4 MiB + 64 KiB, 30-second upload deadline), before multipart parsing. Images are forwarded with fixed filenames. Generated images and API responses use `Cache-Control: no-store`.
 
 ## Checks
 
@@ -70,6 +70,6 @@ PLAYWRIGHT_CHANNEL=chrome npm run test:browser
 
 Unit tests clear database credentials before loading application modules. PostgreSQL tests run the real migration and storage queries against an isolated in-memory PostgreSQL engine (PGlite); they do not use Neon or make payments. Browser tests run a local server with dummy credentials and intercept all payment/image requests. They never make real payments or invoke image generation. On machines without Chrome, run `npx playwright install chromium` then `npm run test:browser`.
 
-Next.js Webpack builds fail when the checkout path contains `#` (as in this workspace's `####` directory). Development uses Turbopack. For a production build, use a checkout/copy in a path without `#`; do not disable tracing to work around it.
+Next.js 16 uses Turbopack for development and production builds. Production verification uses a copy without `#` in its path because this workspace's `####` directory previously broke Webpack tracing. Do not disable tracing to work around path issues. Turbopack's CSS worker needs to open a local port; restricted sandboxes may require additional execution permission.
 
 See [the security audit](docs/security-audit-2026-09-10.md) for findings, validation and rollout limits, and [data handling](docs/data-minimization.md).

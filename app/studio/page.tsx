@@ -34,6 +34,11 @@ interface PhotoEntry {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const MAX_PHOTOS  = LEGAL.maxPhotosPerOrder;
+// A Vercel Function accepts at most a 4.5 MB request body. Leave room for the
+// multipart envelope and the PNG mask, whose canvas output is normally tiny.
+const MAX_IMAGE_UPLOAD_BYTES = 3.5 * 1024 * 1024;
+const MAX_MASK_UPLOAD_BYTES = 512 * 1024;
+const MIN_NORMALIZED_SIDE_PX = 1024;
 
 // ── Image helpers (ported from original) ──────────────────────────────────────
 async function normalizeImageFile(
@@ -45,21 +50,63 @@ async function normalizeImageFile(
     const img = new Image();
     img.onload = () => {
       const ow = img.naturalWidth, oh = img.naturalHeight;
-      const scale = Math.min(1, maxSidePx / Math.max(ow, oh));
-      const w = Math.max(1, Math.round(ow * scale));
-      const h = Math.max(1, Math.round(oh * scale));
       URL.revokeObjectURL(url);
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) { reject(new Error("Canvas error")); return; }
-      ctx.drawImage(img, 0, 0, w, h);
-      // Re-encode every input to remove metadata and normalize GIF/WebP to PNG.
-      const mime = sourceFile.type === "image/jpeg" || sourceFile.type === "image/jpg" ? "image/jpeg" : "image/png";
-      canvas.toBlob((blob) => {
-        if (!blob) { reject(new Error("Blob error")); return; }
-        resolve({ file: new File([blob], sourceFile.name, { type: mime }), width: w, height: h });
-      }, mime, 0.92);
+
+      const originalMaxSide = Math.max(ow, oh);
+      const encodeImage = (targetMaxSide: number, quality: number, mime: string) => new Promise<{
+        blob: Blob;
+        width: number;
+        height: number;
+      }>((resolveBlob, rejectBlob) => {
+        const scale = Math.min(1, targetMaxSide / originalMaxSide);
+        const width = Math.max(1, Math.round(ow * scale));
+        const height = Math.max(1, Math.round(oh * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { rejectBlob(new Error("Canvas error")); return; }
+        // JPEG has no alpha; fill it before drawing transparent PNG/WebP sources.
+        if (mime === "image/jpeg") {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, width, height);
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          if (!blob) { rejectBlob(new Error("Blob error")); return; }
+          resolveBlob({ blob, width, height });
+        }, mime, quality);
+      });
+
+      void (async () => {
+        try {
+          let targetMaxSide = Math.min(maxSidePx, originalMaxSide);
+          // Always re-encode to strip metadata. Keep small PNGs lossless;
+          // oversized PNGs are converted to JPEG before reducing dimensions.
+          let mime = ["image/jpeg", "image/jpg"].includes(sourceFile.type) ? "image/jpeg" : "image/png";
+          let encoded = await encodeImage(targetMaxSide, 0.9, mime);
+          if (encoded.blob.size > MAX_IMAGE_UPLOAD_BYTES && mime === "image/png") {
+            mime = "image/jpeg";
+            encoded = await encodeImage(targetMaxSide, 0.9, mime);
+          }
+          for (let attempt = 0; encoded.blob.size > MAX_IMAGE_UPLOAD_BYTES && attempt < 7; attempt += 1) {
+            if (targetMaxSide <= MIN_NORMALIZED_SIDE_PX) break;
+            targetMaxSide = Math.max(MIN_NORMALIZED_SIDE_PX, Math.floor(targetMaxSide * 0.8));
+            encoded = await encodeImage(targetMaxSide, Math.max(0.72, 0.9 - (attempt + 1) * 0.03), mime);
+          }
+          if (encoded.blob.size > MAX_IMAGE_UPLOAD_BYTES) {
+            throw new Error("Не удалось сжать фото для отправки. Выберите файл меньшего размера.");
+          }
+          const name = sourceFile.name.replace(/\.[^.]+$/, "") || "photo";
+          resolve({
+            file: new File([encoded.blob], `${name}.${mime === "image/jpeg" ? "jpg" : "png"}`, { type: mime }),
+            width: encoded.width,
+            height: encoded.height,
+          });
+        } catch (error) {
+          reject(error);
+        }
+      })();
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Load error")); };
     img.src = url;
@@ -435,6 +482,10 @@ export default function StudioPage() {
     if (!exported) {
       return null;
     }
+    if (exported.file.size > MAX_MASK_UPLOAD_BYTES) {
+      setPaymentError("Маска этого фото слишком большая для отправки. Уменьшите размер исходного фото и разметьте его заново.");
+      return null;
+    }
 
     setPhotos((prev) =>
       prev.map((p) =>
@@ -504,7 +555,9 @@ export default function StudioPage() {
       const formData = new FormData();
       formData.append("image", photo.file);
       formData.append("mode",  batchMode === "manual" ? "mask" : "auto");
-      formData.append("output_format", "png");
+      // WebP keeps the function response safely below Vercel's 4.5 MB cap more
+      // often than PNG; the browser still downloads the original rendered size.
+      formData.append("output_format", "webp");
       formData.append("quality", "high");
       if (batchMode === "manual" && photo.maskFile) formData.append("mask", photo.maskFile);
 
@@ -591,6 +644,11 @@ export default function StudioPage() {
     if (!consentChecked || isCreatingPayment || checkoutLockedRef.current) return;
     const toProcess = photos.filter((p) => p.status === "ready" || p.status === "masked");
     if (!toProcess.length) return;
+    if (mode === "manual" && toProcess.some((p) => !p.maskFile || p.maskFile.size > MAX_MASK_UPLOAD_BYTES)) {
+      setShowConsentModal(false);
+      setPaymentError("Одна из масок отсутствует или слишком велика. Уменьшите фото и создайте маску заново до оплаты.");
+      return;
+    }
 
     checkoutLockedRef.current = true;
     setIsCreatingPayment(true);

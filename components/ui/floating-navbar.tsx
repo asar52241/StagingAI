@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { type ReactNode, useState } from "react";
 import {
   motion,
   AnimatePresence,
@@ -17,7 +17,7 @@ export const FloatingNav = ({
   navItems: {
     name: string;
     link: string;
-    icon?: JSX.Element;
+    icon?: ReactNode;
   }[];
   className?: string;
 }) => {

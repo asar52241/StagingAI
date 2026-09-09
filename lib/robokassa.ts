@@ -57,15 +57,16 @@ export function buildPaymentUrl(outSum: number, invId: number, description: stri
   const receiptEncoded = encodeURIComponent(JSON.stringify(receipt));
   const success = `${origin}/studio?paid=true`;
   const failure = `${origin}/studio?paid=false`;
-  // Additional return URLs are signed in the order defined by Robokassa.
-  const signature = md5(`${login}:${amount}:${invId}:${receiptEncoded}:${success}:GET:${failure}:GET:${password(1)}`);
+  // Preserve this merchant's verified signature format (see docs/robokassa-receipt-issue.md).
+  // Including Receipt caused error 29 in the deployed integration.
+  const signature = md5(`${login}:${amount}:${invId}:${password(1)}`);
   const params = new URLSearchParams({
     MerchantLogin: login, OutSum: amount, InvId: String(invId), Description: description,
-    Receipt: receiptEncoded, SignatureValue: signature, IsTest: IS_TEST ? "1" : "0",
-    Culture: "ru", Encoding: "utf-8", SuccessUrl2: success, SuccessUrl2Method: "GET",
-    FailUrl2: failure, FailUrl2Method: "GET",
+    SignatureValue: signature, IsTest: IS_TEST ? "1" : "0", Culture: "ru", Encoding: "utf-8",
   });
-  return `https://auth.robokassa.ru/Merchant/Index.aspx?${params}`;
+  // Encode these values once, preserving %20 in the receipt. Return URLs use
+  // the configured site origin; never use request forwarding headers here.
+  return `https://auth.robokassa.ru/Merchant/Index.aspx?${params}&Receipt=${receiptEncoded}&SuccessURL=${encodeURIComponent(success)}&FailURL=${encodeURIComponent(failure)}`;
 }
 
 export function verifyResultSignature(outSum: string, invId: string, signature: string): boolean {
