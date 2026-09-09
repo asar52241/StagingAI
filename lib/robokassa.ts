@@ -1,108 +1,110 @@
-import { createHash } from "crypto";
+import { createHash, createHmac, randomInt, timingSafeEqual } from "node:crypto";
 
-const LOGIN = process.env.ROBOKASSA_LOGIN!;
-const PASS1  = process.env.ROBOKASSA_PASSWORD1!;
-const PASS2  = process.env.ROBOKASSA_PASSWORD2!;
 export const IS_TEST = process.env.ROBOKASSA_TEST === "true";
 
-const TEST_PASS1 = process.env.ROBOKASSA_TEST_PASSWORD1 ?? PASS1;
-const TEST_PASS2 = process.env.ROBOKASSA_TEST_PASSWORD2 ?? PASS2;
+function required(name: string): string {
+  const value = process.env[name];
+  if (!value?.trim()) throw new Error(`Missing server configuration: ${name}`);
+  return value;
+}
+const password = (number: 1 | 2) => required(`ROBOKASSA_${IS_TEST ? "TEST_" : ""}PASSWORD${number}`);
+const tokenSecret = () => {
+  const secret = required("PAYMENT_TOKEN_SECRET");
+  if (secret.length < 32) throw new Error("PAYMENT_TOKEN_SECRET must contain at least 32 characters");
+  return secret;
+};
 
-const p1 = () => IS_TEST ? TEST_PASS1 : PASS1;
-const p2 = () => IS_TEST ? TEST_PASS2 : PASS2;
-
-function md5(str: string): string {
-  return createHash("md5").update(str, "utf8").digest("hex");
+export function assertPaymentConfiguration() {
+  required("ROBOKASSA_LOGIN");
+  password(1);
+  password(2);
+  tokenSecret();
 }
 
-/** Генерирует уникальный InvId (1–2 000 000 000) через CSPRNG. */
+function md5(value: string): string {
+  // Robokassa protocol requires the algorithm selected in the merchant settings.
+  return createHash("md5").update(value, "utf8").digest("hex");
+}
+
+function equalHex(expected: string, actual: string): boolean {
+  return /^[a-f0-9]+$/i.test(actual) && actual.length === expected.length &&
+    timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(actual, "hex"));
+}
+
+export function parseInvoiceId(value: string): number | null {
+  if (!/^[1-9]\d{0,15}$/.test(value)) return null;
+  const id = Number(value);
+  return Number.isSafeInteger(id) ? id : null;
+}
+
+/** Accept exact decimal amounts, including Robokassa's trailing fractional zeroes. */
+export function parseAmountCents(value: string): number | null {
+  if (!/^\d{1,10}(?:\.\d{1,6})?$/.test(value)) return null;
+  const [whole, fraction = ""] = value.split(".");
+  if (/[1-9]/.test(fraction.slice(2))) return null;
+  const cents = Number(whole) * 100 + Number(fraction.slice(0, 2).padEnd(2, "0"));
+  return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
+}
+
+/** Time component prevents old expired invoice IDs from being reused. Storage detects collisions. */
 export function generateInvId(): number {
-  const buf = new Uint32Array(1);
-  crypto.getRandomValues(buf);
-  return (buf[0] % 2_000_000_000) + 1;
+  return Date.now() * 1000 + randomInt(1000);
 }
 
-/** Формирует URL для редиректа пользователя на страницу оплаты Робокассы. */
-export function buildPaymentUrl(outSum: number, invId: number, description: string, receipt?: object): string {
-  const outSumStr = outSum.toFixed(2);
-  const receiptEncoded = receipt ? encodeURIComponent(JSON.stringify(receipt)) : undefined;
-  const sigBase = receiptEncoded
-    ? `${LOGIN}:${outSumStr}:${invId}:${receiptEncoded}:${p1()}`
-    : `${LOGIN}:${outSumStr}:${invId}:${p1()}`;
-  const sig = md5(sigBase);
+export function buildPaymentUrl(outSum: number, invId: number, description: string, receipt: object, origin: string): string {
+  const login = required("ROBOKASSA_LOGIN");
+  const amount = outSum.toFixed(2);
+  const receiptEncoded = encodeURIComponent(JSON.stringify(receipt));
+  const success = `${origin}/studio?paid=true`;
+  const failure = `${origin}/studio?paid=false`;
+  // Additional return URLs are signed in the order defined by Robokassa.
+  const signature = md5(`${login}:${amount}:${invId}:${receiptEncoded}:${success}:GET:${failure}:GET:${password(1)}`);
   const params = new URLSearchParams({
-    MerchantLogin: LOGIN,
-    OutSum:         outSumStr,
-    InvId:          String(invId),
-    Description:    description,
-    SignatureValue: sig,
-    IsTest:         IS_TEST ? "1" : "0",
-    Culture:        "ru",
-    Encoding:       "utf-8",
+    MerchantLogin: login, OutSum: amount, InvId: String(invId), Description: description,
+    Receipt: receiptEncoded, SignatureValue: signature, IsTest: IS_TEST ? "1" : "0",
+    Culture: "ru", Encoding: "utf-8", SuccessUrl2: success, SuccessUrl2Method: "GET",
+    FailUrl2: failure, FailUrl2Method: "GET",
   });
-  if (receiptEncoded) {
-    params.set("Receipt", receiptEncoded);
-  }
   return `https://auth.robokassa.ru/Merchant/Index.aspx?${params}`;
 }
 
-/**
- * Проверяет подпись уведомления Робокассы (ResultURL).
- * Подпись: MD5(OutSum:InvId:Password2) — без логина.
- */
-export function verifyResultSignature(
-  outSum: string,
-  invId: string,
-  signatureValue: string,
-): boolean {
-  const expected = md5(`${outSum}:${invId}:${p2()}`);
-  return expected.toLowerCase() === signatureValue.toLowerCase();
+export function verifyResultSignature(outSum: string, invId: string, signature: string): boolean {
+  return equalHex(md5(`${outSum}:${invId}:${password(2)}`), signature);
 }
 
-/**
- * URL для проверки статуса платежа через Робокассу XML API (OpStateExt).
- * Параметр InvoiceID (не InvId!) — по документации Робокассы.
- * Внимание: работает ТОЛЬКО в боевом режиме, не для тестовых платежей.
- */
+export function verifySuccessSignature(outSum: string, invId: string, signature: string): boolean {
+  // Never round/normalize signed data before verification.
+  return equalHex(md5(`${outSum}:${invId}:${password(1)}`), signature);
+}
+
 export function buildStatusUrl(invId: number): string {
-  const sig = md5(`${LOGIN}:${invId}:${p2()}`);
+  const login = required("ROBOKASSA_LOGIN");
   const params = new URLSearchParams({
-    MerchantLogin: LOGIN,
-    InvoiceID:     String(invId),   // Bug fix: документация требует InvoiceID
-    Signature:     sig,
+    MerchantLogin: login, InvoiceID: String(invId), Signature: md5(`${login}:${invId}:${password(2)}`),
   });
   return `https://auth.robokassa.ru/Merchant/WebService/Service.asmx/OpStateExt?${params}`;
 }
 
-/**
- * Верифицирует подпись из SuccessURL редиректа Робокассы.
- * Формула: MD5(OutSum:InvId:Password#1)
- * Работает в обоих режимах — тестовом и боевом.
- */
-export function verifySuccessSignature(
-  outSum: string,
-  invId: string,
-  signatureValue: string,
-): boolean {
-  const expected = md5(`${outSum}:${invId}:${p1()}`);
-  return expected.toLowerCase() === signatureValue.toLowerCase();
+export type OrderToken = { invId: number; owner: string; expiresAt: number };
+type TokenKind = "order" | "paid";
+
+export function signOrderToken(kind: TokenKind, payload: OrderToken): string {
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = createHmac("sha256", tokenSecret()).update(`stagingai:v1:${kind}:${body}`).digest("hex");
+  return `${body}.${signature}`;
 }
 
-/** Подписывает токен оплаченного заказа для cookie sa_paid. */
-export function signPaidToken(invId: number, count: number): string {
-  const sig = md5(`${invId}:${count}:${p2()}`);
-  return `${invId}:${count}:${sig}`;
-}
-
-/** Верифицирует cookie sa_paid. Возвращает {invId, count} или null. */
-export function verifyPaidToken(token: string): { invId: number; count: number } | null {
-  const parts = token.split(":");
-  if (parts.length !== 3) return null;
-  const [invIdStr, countStr, sig] = parts;
-  const invId = parseInt(invIdStr, 10);
-  const count = parseInt(countStr, 10);
-  if (!invId || !count) return null;
-  const expected = md5(`${invId}:${count}:${p2()}`);
-  if (expected.toLowerCase() !== sig.toLowerCase()) return null;
-  return { invId, count };
+export function verifyOrderToken(kind: TokenKind, token: string): OrderToken | null {
+  if (token.length > 1024) return null;
+  const [body, signature, extra] = token.split(".");
+  if (!body || !signature || extra !== undefined || !/^[A-Za-z0-9_-]+$/.test(body)) return null;
+  const expected = createHmac("sha256", tokenSecret()).update(`stagingai:v1:${kind}:${body}`).digest("hex");
+  if (!equalHex(expected, signature)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as OrderToken;
+    if (!payload || !Number.isSafeInteger(payload.invId) || payload.invId <= 0 ||
+        typeof payload.owner !== "string" || !/^[a-f0-9]{64}$/.test(payload.owner) ||
+        !Number.isSafeInteger(payload.expiresAt) || payload.expiresAt <= Date.now()) return null;
+    return payload;
+  } catch { return null; }
 }

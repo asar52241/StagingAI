@@ -1,3 +1,5 @@
+> Historical MVP design. The current payment system requires persistent Redis in production; see [README](README.md) and [security audit](docs/security-audit-2026-09-10.md).
+
 ## 1) High-level architecture (MVP)
 
 **One web app** (Next.js) that contains:

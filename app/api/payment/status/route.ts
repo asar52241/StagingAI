@@ -1,98 +1,64 @@
-/**
- * Проверяет статус платежа.
- *
- * Стратегия верификации:
- * 1. Всегда проверяем подпись из SuccessURL: MD5(OutSum:InvId:Password#1)
- *    — работает и в тестовом, и в боевом режиме.
- * 2. В боевом режиме дополнительно опрашиваем OpStateExt (XML API Робокассы).
- *    OpStateExt не работает для тестовых платежей.
- *
- * При успехе устанавливает httpOnly cookie sa_paid для /api/declutter.
- */
 import { NextRequest, NextResponse } from "next/server";
-import { buildStatusUrl, IS_TEST, signPaidToken, verifySuccessSignature } from "@/lib/robokassa";
-import { LEGAL } from "@/config/legal";
+import { buildStatusUrl, IS_TEST, parseAmountCents, parseInvoiceId, signOrderToken, verifyOrderToken, verifySuccessSignature } from "@/lib/robokassa";
+import { getOrder, markOrderPaid } from "@/lib/orders";
+import { rateLimit, readCookie, readLimitedBody, RequestError, requireSameOrigin } from "@/lib/requestSecurity";
 
-const MAX_INV_ID = 2_000_000_000;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const reply = (data: object, status = 200) => NextResponse.json(data, { status, headers: { "Cache-Control": "no-store" } });
 
 export async function GET(req: NextRequest) {
-  const sp       = req.nextUrl.searchParams;
-  const invIdStr = sp.get("invId")  ?? "";
-  // OutSum берём точно в том виде, в каком его прислала Робокасса,
-  // но нормализуем до 2 знаков перед проверкой подписи — формат одинаков в тест и боевом.
-  const outSumRaw = sp.get("outSum") ?? "";
-  const sig       = sp.get("sig")    ?? "";
-  const noSig     = sp.get("noSig")  === "true";
+  try {
+    requireSameOrigin(req);
+    const params = req.nextUrl.searchParams;
+    const invId = parseInvoiceId(params.get("invId") ?? "");
+    if (!invId) return reply({ paid: false, error: "Invalid invoice" }, 400);
+    const pending = readCookie(req, "sa_order");
+    const paid = readCookie(req, "sa_paid");
+    const tokens = [pending ? verifyOrderToken("order", pending) : null, paid ? verifyOrderToken("paid", paid) : null];
+    const token = tokens.find((candidate) => candidate?.invId === invId);
+    if (!token) return reply({ paid: false, error: "Order access required" }, 403);
+    let order = await getOrder(invId);
+    if (!order || order.owner !== token.owner || order.isTest !== IS_TEST) return reply({ paid: false }, 403);
+    if (!await rateLimit(`status:${invId}`, 30)) return reply({ paid: false, error: "Too many requests" }, 429);
 
-  const invId = parseInt(invIdStr, 10);
-  if (!invId || invId <= 0 || invId > MAX_INV_ID || !outSumRaw) {
-    return NextResponse.json({ paid: false, error: "missing or invalid params" }, { status: 400 });
-  }
-  if (!noSig && !sig) {
-    return NextResponse.json({ paid: false, error: "missing or invalid params" }, { status: 400 });
-  }
-
-  // Нормализуем OutSum до 2 знаков после запятой — Робокасса в тест-режиме присылает
-  // "150.00", в боевом "150.000000"; подпись всегда считается от нормализованного значения.
-  const outSumNorm = parseFloat(outSumRaw).toFixed(2);
-
-  // ── 1. Верификация подписи SuccessURL ─────────────────────────────────────────
-  // Пропускаем только если явно noSig=true (fallback-путь через localStorage)
-  if (!noSig && !verifySuccessSignature(outSumNorm, invIdStr, sig)) {
-    return NextResponse.json({ paid: false, error: "invalid signature" }, { status: 400 });
-  }
-
-  // ── 2. В боевом режиме дополнительно проверяем через OpStateExt ───────────────
-  let count = 0;
-  if (!IS_TEST) {
-    try {
-      const controller = new AbortController();
-      const timeoutId  = setTimeout(() => controller.abort(), 8_000);
-      let res: Response;
-      try {
-        res = await fetch(buildStatusUrl(invId), { cache: "no-store", signal: controller.signal });
-      } finally {
-        clearTimeout(timeoutId);
+    if (!order.paidUntil) {
+      if (IS_TEST) {
+        const amount = params.get("outSum") ?? "";
+        const signature = params.get("sig") ?? "";
+        // noSig can never authorize a test payment. A verified ResultURL also works.
+        if (parseAmountCents(amount) !== order.amountCents || !verifySuccessSignature(amount, String(invId), signature)) {
+          return reply({ paid: false, error: "Invalid payment signature" }, 400);
+        }
+      } else {
+        const response = await fetch(buildStatusUrl(invId), { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8_000) });
+        if (!response.ok) return reply({ paid: false, error: "Payment provider unavailable" }, 502);
+        const xml = new TextDecoder().decode(await readLimitedBody(response, 64 * 1024));
+        if (verifiedStatusAmount(xml) !== order.amountCents) return reply({ paid: false });
       }
-
-      if (!res.ok) {
-        return NextResponse.json({ paid: false, error: "robokassa api error" });
-      }
-      const xml = await res.text();
-      console.log("[payment/status] OpStateExt response:", xml);
-
-      // State Code 100 = оплачено успешно
-      const stateMatch = xml.match(/<State>[\s\S]*?<Code>(\d+)<\/Code>/);
-      const stateCode  = stateMatch ? parseInt(stateMatch[1], 10) : 0;
-      if (stateCode !== 100) {
-        console.log("[payment/status] stateCode not 100:", stateCode);
-        return NextResponse.json({ paid: false, stateCode });
-      }
-
-      // Сумма из ответа Робокассы (тег IncSum — фактически зачисленная сумма)
-      const incSumMatch = xml.match(/<IncSum>([\d.]+)<\/IncSum>/);
-      const verifiedSum = incSumMatch ? parseFloat(incSumMatch[1]) : parseFloat(outSumNorm);
-      count = Math.round(verifiedSum / LEGAL.pricePerPhoto);
-    } catch (err) {
-      const isTimeout = err instanceof Error && err.name === "AbortError";
-      return NextResponse.json({ paid: false, error: isTimeout ? "timeout" : "network error" });
+      order = await markOrderPaid(invId, order.amountCents);
     }
-  } else {
-    // Тест-режим: OpStateExt недоступен — доверяем верифицированной подписи SuccessURL
-    count = Math.round(parseFloat(outSumNorm) / LEGAL.pricePerPhoto);
+    if (!order?.paidUntil || order.paidUntil <= Date.now()) return reply({ paid: false, error: "Order access expired" }, 410);
+    const response = reply({ paid: true, count: order.count });
+    response.cookies.set("sa_paid", signOrderToken("paid", {
+      invId, owner: order.owner, expiresAt: order.paidUntil,
+    }), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", expires: new Date(order.paidUntil), path: "/" });
+    return response;
+  } catch (error) {
+    return reply({ paid: false, error: error instanceof RequestError ? error.message : "Payment verification unavailable" }, error instanceof RequestError ? error.status : 503);
   }
+}
 
-  count = Math.max(count, LEGAL.minPhotosPerOrder);
-
-  // ── 3. Подписанный cookie sa_paid (httpOnly) ──────────────────────────────────
-  // maxAge = 20 минут: достаточно для завершения обработки, ограничивает окно повторного использования
-  const response = NextResponse.json({ paid: true, count });
-  response.cookies.set("sa_paid", signPaidToken(invId, count), {
-    httpOnly: true,
-    secure:   process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge:   1_200, // 20 минут
-    path:     "/",
-  });
-  return response;
+/** Fixed-schema XML from Robokassa; reject missing/ambiguous fields. */
+function verifiedStatusAmount(xml: string): number | null {
+  if (/<!DOCTYPE|<!ENTITY/i.test(xml)) return null;
+  const single = (text: string, tag: string) => {
+    const matches = [...text.matchAll(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "g"))];
+    return matches.length === 1 ? matches[0][1].trim() : null;
+  };
+  if (single(single(xml, "Result") ?? "", "Code") !== "0" || single(single(xml, "State") ?? "", "Code") !== "100") return null;
+  const info = single(xml, "Info") ?? "";
+  // IncSum is in the buyer's payment currency; never use it to determine credits.
+  return parseAmountCents(single(info, "OutSum") ?? "");
 }

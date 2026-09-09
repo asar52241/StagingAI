@@ -22,8 +22,10 @@ interface AccordionFeatureSectionProps {
 }
 
 const AccordionFeatureSection = ({ features }: AccordionFeatureSectionProps) => {
-  const [activeTabId, setActiveTabId] = useState<number>(features[0].id);
-  const [activeImage, setActiveImage] = useState(features[0].image);
+  const [activeTabId, setActiveTabId] = useState<number | undefined>(features[0]?.id);
+  const activeFeature = features.find((feature) => feature.id === activeTabId) ?? features[0];
+  if (!activeFeature) return null;
+  const activeImage = activeFeature.image;
 
   return (
     <div className="overflow-hidden rounded-3xl bg-[#0f1121] px-8 py-10 sm:px-10 lg:px-12 lg:py-14">
@@ -45,16 +47,16 @@ const AccordionFeatureSection = ({ features }: AccordionFeatureSectionProps) => 
           <div className="mt-8">
             <Accordion
               type="single"
-              defaultValue={`item-${features[0].id}`}
+              value={`item-${activeFeature.id}`}
+              onValueChange={(value) => {
+                const feature = features.find((item) => `item-${item.id}` === value);
+                if (feature) setActiveTabId(feature.id);
+              }}
               className="w-full"
             >
               {features.map((tab) => (
                 <AccordionItem key={tab.id} value={`item-${tab.id}`}>
                   <AccordionTrigger
-                    onClick={() => {
-                      setActiveImage(tab.image);
-                      setActiveTabId(tab.id);
-                    }}
                     className="cursor-pointer py-4 !no-underline transition hover:no-underline"
                   >
                     <h6

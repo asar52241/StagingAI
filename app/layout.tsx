@@ -41,14 +41,24 @@ export default function RootLayout({
 
             ym(${YANDEX_METRIKA_ID}, 'init', {
               ssr: true,
-              webvisor: true,
+              webvisor: false,
               clickmap: true,
               ecommerce: "dataLayer",
-              referrer: document.referrer,
-              url: location.href,
+              referrer: safeAnalyticsUrl(document.referrer),
+              url: safeAnalyticsUrl(location.href),
               accurateTrackBounce: true,
               trackLinks: true
             });
+            function safeAnalyticsUrl(value) {
+              try {
+                var url = new URL(value);
+                Array.from(url.searchParams.keys()).forEach(function(key) {
+                  if (!/^(utm_(source|medium|campaign|term|content|id)|yclid|gclid)$/i.test(key)) url.searchParams.delete(key);
+                });
+                url.hash = '';
+                return url.toString();
+              } catch (_) { return ''; }
+            }
           `}
         </Script>
         <Suspense fallback={null}>

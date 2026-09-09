@@ -1,5 +1,9 @@
 import OpenAI from "openai";
-import { verifyPaidToken } from "@/lib/robokassa";
+import { createHash } from "node:crypto";
+import { verifyOrderToken, type OrderToken } from "@/lib/robokassa";
+import { finishProcessing, reserveProcessing } from "@/lib/orders";
+import { rateLimit, readCookie, readLimitedBody, RequestError, requireSameOrigin } from "@/lib/requestSecurity";
+import { parseImageDimensions, parsePngMetadata, type ImageDimensions, type PngMetadata } from "@/lib/imageValidation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,8 +11,6 @@ export const maxDuration = 300;
 
 type OutputFormat = "png" | "jpeg" | "webp";
 type OutputQuality = "high" | "medium";
-type ImageDimensions = { width: number; height: number };
-type PngMetadata = ImageDimensions & { hasTransparency: boolean };
 type ModelSize = "1024x1024" | "1536x1024" | "1024x1536";
 type DeclutterMode = "mask" | "auto";
 
@@ -18,142 +20,7 @@ const AUTO_DECLUTTER_PROMPT =
   "Remove all movable objects from the room: all furniture, appliances, personal items, decorations, clutter, cables, trash, boxes, posters, rugs, plants, and any freestanding items. Keep only the structural elements of the space: walls, floor, ceiling, windows, doors, built-in fixtures, and architectural features. Preserve the original room geometry, perspective, and camera angle. Match the existing lighting and shadows naturally. The result must look like a realistic real-estate listing photo of an empty room. Do not add new objects, furniture, text, logos, or watermarks. Photorealistic.";
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 const MAX_MASK_BYTES = 4 * 1024 * 1024;
-const SUPPORTED_IMAGE_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]);
-const RATE_LIMIT_MAX_REQUESTS = 10;
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const rateLimitStore = new Map<string, number[]>();
-
-function parsePngMetadata(bytes: Buffer): PngMetadata | null {
-  const pngSignature = [
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-  ];
-  if (bytes.length < 8) {
-    return null;
-  }
-
-  for (let i = 0; i < pngSignature.length; i += 1) {
-    if (bytes[i] !== pngSignature[i]) {
-      return null;
-    }
-  }
-
-  let width = 0;
-  let height = 0;
-  let hasTRNS = false;
-  let colorType = -1;
-  let offset = 8;
-
-  while (offset + 12 <= bytes.length) {
-    const chunkLength = bytes.readUInt32BE(offset);
-    const chunkType = bytes.toString("ascii", offset + 4, offset + 8);
-    const chunkDataStart = offset + 8;
-    const chunkDataEnd = chunkDataStart + chunkLength;
-    const nextChunkOffset = chunkDataEnd + 4;
-
-    if (nextChunkOffset > bytes.length) {
-      return null;
-    }
-
-    if (chunkType === "IHDR") {
-      if (chunkLength < 13) {
-        return null;
-      }
-      width = bytes.readUInt32BE(chunkDataStart);
-      height = bytes.readUInt32BE(chunkDataStart + 4);
-      colorType = bytes[chunkDataStart + 9];
-    } else if (chunkType === "tRNS") {
-      hasTRNS = true;
-    } else if (chunkType === "IEND") {
-      break;
-    }
-
-    offset = nextChunkOffset;
-  }
-
-  if (!width || !height) {
-    return null;
-  }
-
-  const hasAlphaChannel = colorType === 4 || colorType === 6;
-  return {
-    width,
-    height,
-    hasTransparency: hasAlphaChannel || hasTRNS,
-  };
-}
-
-function parseJpegDimensions(bytes: Buffer): ImageDimensions | null {
-  if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
-    return null;
-  }
-
-  const sofMarkers = new Set([
-    0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce,
-    0xcf,
-  ]);
-
-  let offset = 2;
-  while (offset + 3 < bytes.length) {
-    if (bytes[offset] !== 0xff) {
-      offset += 1;
-      continue;
-    }
-
-    const marker = bytes[offset + 1];
-    offset += 2;
-
-    if (marker === 0xd8 || marker === 0xd9) {
-      continue;
-    }
-
-    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
-      continue;
-    }
-
-    if (offset + 2 > bytes.length) {
-      return null;
-    }
-
-    const segmentLength = bytes.readUInt16BE(offset);
-    if (segmentLength < 2 || offset + segmentLength > bytes.length) {
-      return null;
-    }
-
-    if (sofMarkers.has(marker)) {
-      if (segmentLength < 7) {
-        return null;
-      }
-
-      const height = bytes.readUInt16BE(offset + 3);
-      const width = bytes.readUInt16BE(offset + 5);
-      if (!width || !height) {
-        return null;
-      }
-      return { width, height };
-    }
-
-    offset += segmentLength;
-  }
-
-  return null;
-}
-
-function parseImageDimensions(bytes: Buffer, mimeType: string): ImageDimensions | null {
-  if (mimeType === "image/png") {
-    const png = parsePngMetadata(bytes);
-    if (!png) {
-      return null;
-    }
-    return { width: png.width, height: png.height };
-  }
-
-  if (mimeType === "image/jpeg" || mimeType === "image/jpg") {
-    return parseJpegDimensions(bytes);
-  }
-
-  return null;
-}
-
+const SUPPORTED_IMAGE_MIME = new Set(["image/jpeg", "image/jpg", "image/png"]);
 function errorResponse(
   status: number,
   code: string,
@@ -173,46 +40,11 @@ function errorResponse(
       status,
       headers: {
         "X-Request-Id": requestId,
+        "Cache-Control": "no-store",
         ...extraHeaders,
       },
     },
   );
-}
-
-function getClientIp(request: Request): string {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    const first = forwardedFor.split(",")[0]?.trim();
-    if (first) {
-      return first;
-    }
-  }
-
-  const realIp = request.headers.get("x-real-ip");
-  if (realIp) {
-    return realIp.trim();
-  }
-
-  return "unknown";
-}
-
-function checkRateLimit(ip: string, nowMs: number): { allowed: boolean; retryAfterSeconds: number } {
-  const previous = rateLimitStore.get(ip) ?? [];
-  const recent = previous.filter((timestamp) => nowMs - timestamp < RATE_LIMIT_WINDOW_MS);
-
-  if (recent.length >= RATE_LIMIT_MAX_REQUESTS) {
-    rateLimitStore.set(ip, recent);
-    const oldest = recent[0];
-    const retryAfterMs = RATE_LIMIT_WINDOW_MS - (nowMs - oldest);
-    return {
-      allowed: false,
-      retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)),
-    };
-  }
-
-  recent.push(nowMs);
-  rateLimitStore.set(ip, recent);
-  return { allowed: true, retryAfterSeconds: 0 };
 }
 
 function logStructured(
@@ -288,16 +120,8 @@ async function decodeResultImage(
   item: { b64_json?: string | null; url?: string | null },
   requestId: string,
 ): Promise<Buffer> {
-  if (item.b64_json) {
+  if (item.b64_json && item.b64_json.length <= 80 * 1024 * 1024) {
     return Buffer.from(item.b64_json, "base64");
-  }
-
-  if (item.url) {
-    const upstream = await fetch(item.url, { cache: "no-store" });
-    if (!upstream.ok) {
-      throw new Error(`UPSTREAM_IMAGE_FETCH_FAILED:${requestId}`);
-    }
-    return Buffer.from(await upstream.arrayBuffer());
   }
 
   throw new Error(`OPENAI_IMAGE_PAYLOAD_MISSING:${requestId}`);
@@ -306,7 +130,6 @@ async function decodeResultImage(
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   const startedAtMs = Date.now();
-  const ip = getClientIp(request);
   let modeForLog: DeclutterMode | "invalid" | "unknown" = "unknown";
   let maskRequiredForLog = false;
   let maskPresentForLog = false;
@@ -322,7 +145,6 @@ export async function POST(request: Request) {
   ) => {
     logStructured(level, {
       request_id: requestId,
-      ip,
       duration_ms: Date.now() - startedAtMs,
       status,
       code,
@@ -342,34 +164,33 @@ export async function POST(request: Request) {
     return fail(
       500,
       "OPENAI_API_KEY_MISSING",
-      "Server is not configured: OPENAI_API_KEY is missing.",
+      "Image processing service is unavailable.",
       "error",
     );
   }
 
-  const rateLimit = checkRateLimit(ip, Date.now());
-  if (!rateLimit.allowed) {
-    return fail(
-      429,
-      "RATE_LIMIT_EXCEEDED",
-      "Too many requests. Please try again in a minute.",
-      "warn",
-      { "Retry-After": String(rateLimit.retryAfterSeconds) },
-    );
-  }
-
-  // Проверяем оплату
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  const saMatch      = cookieHeader.match(/(?:^|;\s*)sa_paid=([^;]+)/);
-  const paidToken    = saMatch ? decodeURIComponent(saMatch[1]) : null;
-  if (!paidToken || !verifyPaidToken(paidToken)) {
-    return fail(402, "PAYMENT_REQUIRED", "Payment required.");
+  let paid: OrderToken | null;
+  try {
+    requireSameOrigin(request);
+    const token = readCookie(request, "sa_paid");
+    paid = token ? verifyOrderToken("paid", token) : null;
+    if (!paid) return fail(402, "PAYMENT_REQUIRED", "Payment required.");
+    if (!await rateLimit(`processing:${paid.invId}`, 10)) {
+      return fail(429, "RATE_LIMIT_EXCEEDED", "Too many requests. Please try again in a minute.", "warn", { "Retry-After": "60" });
+    }
+  } catch (error) {
+    return fail(error instanceof RequestError ? error.status : 503, "REQUEST_REJECTED", "Request cannot be processed.");
   }
 
   let formData: FormData;
   try {
-    formData = await request.formData();
-  } catch {
+    const contentType = request.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().startsWith("multipart/form-data;")) throw new RequestError(400, "Invalid multipart");
+    const body = await readLimitedBody(request, MAX_IMAGE_BYTES + MAX_MASK_BYTES + 64 * 1024);
+    formData = await new Response(Uint8Array.from(body), { headers: { "Content-Type": contentType } }).formData();
+  } catch (error) {
+    if (error instanceof RequestError && error.status === 413) return fail(413, "BODY_TOO_LARGE", "Request body too large.");
+    if (error instanceof RequestError && error.status === 408) return fail(408, "BODY_TIMEOUT", "Image upload timed out.");
     return fail(
       400,
       "INVALID_MULTIPART",
@@ -421,7 +242,7 @@ export async function POST(request: Request) {
     return fail(
       400,
       "INVALID_IMAGE_TYPE",
-      "Unsupported image format. Allowed formats: JPG, PNG, WEBP, GIF.",
+      "Unsupported image format. Allowed formats: JPG, PNG.",
       "warn",
       undefined,
       { image_mime: imageMimeType },
@@ -466,8 +287,8 @@ export async function POST(request: Request) {
   try {
     if (mode === "mask" && mask) {
       [imageBytes, maskBytes] = await Promise.all([
-        Buffer.from(await image.arrayBuffer()),
-        Buffer.from(await mask.arrayBuffer()),
+        image.arrayBuffer().then((bytes) => Buffer.from(bytes)),
+        mask.arrayBuffer().then((bytes) => Buffer.from(bytes)),
       ]);
     } else {
       imageBytes = Buffer.from(await image.arrayBuffer());
@@ -491,6 +312,10 @@ export async function POST(request: Request) {
       undefined,
       { image_mime: imageMimeType, image_bytes: image.size },
     );
+  }
+
+  if (imageDimensions.width > 3000 || imageDimensions.height > 3000) {
+    return fail(400, "IMAGE_DIMENSIONS_TOO_LARGE", "Resize the image to at most 3000 pixels per side.");
   }
 
   let maskMetadata: PngMetadata | null = null;
@@ -539,26 +364,36 @@ export async function POST(request: Request) {
   const outputFormat = parseOutputFormat(formData.get("output_format"));
   const quality = parseOutputQuality(formData.get("quality"));
   const modelSize = pickModelSize(imageDimensions);
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, timeout: 240_000, maxRetries: 0 });
+  const fingerprint = createHash("sha256").update(imageBytes).digest("hex");
+  try {
+    const reservation = await reserveProcessing(paid.invId, paid.owner, fingerprint, requestId);
+    if (reservation !== "ok") {
+      return fail(reservation === "busy" ? 409 : 402, reservation.toUpperCase(),
+        reservation === "busy" ? "This photo is already processing." : "Payment or photo processing allowance exhausted.");
+    }
+  } catch {
+    return fail(503, "ORDER_STORAGE_UNAVAILABLE", "Please try again later.");
+  }
 
   try {
     const prompt = mode === "auto" ? AUTO_DECLUTTER_PROMPT : BASE_PROMPT;
 
     // The current SDK typing omits `output_format` for edits, but the API supports it.
-    const editPayload: Record<string, unknown> = {
+    const editPayload: OpenAI.ImageEditParams & { output_format: OutputFormat } = {
       model: "gpt-image-1.5",
       prompt,
-      image: [image],
+      image: [new File([Uint8Array.from(imageBytes)], imageMimeType === "image/png" ? "source.png" : "source.jpg", { type: imageMimeType })],
       n: 1,
       output_format: outputFormat,
       quality,
       size: modelSize,
     };
     if (mode === "mask" && mask) {
-      editPayload.mask = mask;
+      editPayload.mask = new File([Uint8Array.from(maskBytes!)], "mask.png", { type: "image/png" });
     }
 
-    const result = await client.images.edit(editPayload as any);
+    const result = await client.images.edit(editPayload);
 
     const item = result.data?.[0];
     if (!item) {
@@ -575,16 +410,12 @@ export async function POST(request: Request) {
       type: getContentType(outputFormat),
     });
 
-    const usage = (result as any).usage as
-      | { input_tokens?: number; output_tokens?: number; total_tokens?: number }
-      | undefined;
+    const usage = result.usage;
     const inputTokens  = usage?.input_tokens  ?? 0;
     const outputTokens = usage?.output_tokens ?? 0;
-    const costUsd = (inputTokens * 5 + outputTokens * 40) / 1_000_000;
 
     logStructured("info", {
       request_id: requestId,
-      ip,
       duration_ms: Date.now() - startedAtMs,
       status: 200,
       code: "OK",
@@ -604,7 +435,6 @@ export async function POST(request: Request) {
       tokens_input:  inputTokens,
       tokens_output: outputTokens,
       tokens_total:  usage?.total_tokens ?? (inputTokens + outputTokens),
-      cost_usd:      parseFloat(costUsd.toFixed(6)),
     });
 
     return new Response(body, {
@@ -617,11 +447,10 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof OpenAI.APIError) {
-      const providerMessage = error.message || "Image processing request failed.";
       return fail(
         502,
         "PROVIDER_API_ERROR",
-        providerMessage,
+        "Image processing service failed. Please try again.",
         "error",
         undefined,
         {
@@ -642,5 +471,8 @@ export async function POST(request: Request) {
       "Unexpected server error.",
       "error",
     );
+  } finally {
+    try { await finishProcessing(paid.invId, fingerprint, requestId); }
+    catch { logStructured("error", { request_id: requestId, code: "ORDER_FINALIZE_FAILED" }); }
   }
 }

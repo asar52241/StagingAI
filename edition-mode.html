@@ -947,9 +947,10 @@ function renderResultCards(list) {
 }
 
 function resCardHTML(p, i = 0) {
+  const safeName = String(p.name).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   return `<div class="res-card" id="rc-${p.id}" style="animation-delay:${i*.1}s">
     <div class="res-photo" id="rp-${p.id}">${resPhotoHTML(p)}</div>
-    <div class="res-name">${p.name}</div>
+    <div class="res-name">${safeName}</div>
     <div class="res-actions" id="ra-${p.id}">${resActionsHTML(p)}</div>
   </div>`;
 }

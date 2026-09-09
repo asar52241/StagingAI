@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { LEGAL } from "@/config/legal";
+import { getOrderPrice } from "@/lib/pricing";
 import { FloatingNav } from "@/components/ui/floating-navbar";
 import { HeroSection } from "@/components/ui/hero-section";
 import { PendingPaymentRedirect } from "@/components/PendingPaymentRedirect";
@@ -514,46 +515,13 @@ function FaqItem({ item }: { item: FaqItem }) {
 }
 
 // ─── Price Calculator ─────────────────────────────────────────────────────────
-/*
- * Pricing algorithm: DP — minimum-cost combination of packages + штучные фото.
- *
- * Packages: 10=450 ₽, 15=700 ₽, 20=950 ₽, 30=1400 ₽  |  штучно: 50 ₽/фото
- *
- * Examples:
- *   N=3  → 3×50 = 150 ₽              (штучно, скидок нет, минимум)
- *   N=10 → пакет 10 = 450 ₽          (экономия 50 ₽ vs 500 ₽ штучно)
- *   N=12 → пакет 10 + 2×50 = 550 ₽   (экономия 50 ₽ vs 600 ₽ штучно)
- *   N=30 → 3×(пакет 10) = 1350 ₽     (экономия 150 ₽; пакет 30=1400 ₽ дороже)
- */
-const CALC_PKGS = [
-  { n: 30, p: 1400 },
-  { n: 20, p: 950 },
-  { n: 15, p: 700 },
-  { n: 10, p: 450 },
-] as const;
-
-function calcMinPrice(photos: number): number {
-  // dp[i] = min cost for exactly i photos
-  const dp = new Array(photos + 1).fill(Infinity);
-  dp[0] = 0;
-  for (let i = 1; i <= photos; i++) {
-    if (dp[i - 1] < Infinity) dp[i] = Math.min(dp[i], dp[i - 1] + 50);
-    for (const { n, p } of CALC_PKGS) {
-      if (i >= n && dp[i - n] < Infinity) {
-        dp[i] = Math.min(dp[i], dp[i - n] + p);
-      }
-    }
-  }
-  return dp[photos];
-}
-
 function PriceCalculator() {
   const [count, setCount] = useState(5);
   const [maxHint, setMaxHint] = useState(false);
 
-  const valid = count >= 3;
-  const basePrice = count * 50;
-  const total = valid ? calcMinPrice(count) : 0;
+  const valid = count >= LEGAL.minPhotosPerOrder;
+  const basePrice = count * LEGAL.pricePerPhoto;
+  const total = valid ? getOrderPrice(count) : 0;
   const savings = valid ? Math.max(0, basePrice - total) : 0;
   const perPhoto = valid ? Math.round((total / count) * 10) / 10 : 50;
 

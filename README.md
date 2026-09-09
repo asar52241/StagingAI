@@ -1,101 +1,64 @@
 # StagingAI
 
-Mask-based inpainting tool for real-estate photos.
+Next.js 15 + React 18 + TypeScript application for automatic decluttering and masked editing of real-estate photos.
 
-## What is implemented
+## Run locally
 
-- Next.js App Router + TypeScript app
-- `POST /api/declutter` backend that supports two modes:
-  - `mode=mask` (manual mask edit)
-  - `mode=auto` (auto-declutter without user mask)
-- Browser editor with:
-  - Manual mask flow (erase/paint, brush size, undo, reset)
-  - Auto-declutter CTA (`Удалить всё (авто)`)
-  - Manual fallback after auto (`Доработать вручную`)
-- Mask export as PNG (alpha) and submit with image
-- Frontend image resize normalization (max side `3000px`)
-- Backend validations:
-  - `image` required in all modes
-  - `mask` required only for `mode=mask`
-  - mime types (`image` JPG/PNG, `mask` PNG for `mode=mask`)
-  - limits (`image <= 50MB`, `mask <= 4MB` for `mode=mask`)
-  - mask transparency + dimension checks for `mode=mask`
-  - invalid `mode` returns `400 INVALID_MODE`
-- In-memory IP rate limit: `10 requests / minute`
-- Structured request logging (request id, duration, status, input metadata)
+Requires Node.js 20.9+ and npm (Node.js 22/24 recommended).
 
-## Requirements
-
-- Node.js 20+ (22 LTS recommended)
-- npm
-- OpenAI API key with image edit access
-
-## Local setup
-
-1. Install dependencies:
-
-```bash
-npm install
-```
-
-2. Create `.env.local`:
-
-```bash
-OPENAI_API_KEY=your_openai_api_key_here
-```
-
-3. Run dev server:
-
-```bash
+```sh
+npm ci
+cp .env.example .env.local
 npm run dev
 ```
 
-Note: this repository path contains `#` characters (`.../####/...`). `npm run dev` is configured with Turbopack to avoid a Next.js manifest bug on such paths.
+Fill in the OpenAI key, Robokassa credentials and `PAYMENT_TOKEN_SECRET` (random, at least 32 characters). Generate a secret with `openssl rand -hex 32`. Never commit `.env.local`. For local payment return URLs, set `NEXT_PUBLIC_SITE_URL=http://localhost:3000`.
 
-4. Open `http://localhost:3000`.
+When `ROBOKASSA_TEST=true`, **separate** test passwords are required; production passwords are never used as a fallback. Local development uses an in-memory order store unless Redis is configured. Restarting it invalidates local orders. Test payments still invoke the paid image provider when using the application manually.
 
-## Build and type-check
+## Payment and processing
 
-```bash
-npx tsc --noEmit
+1. `/api/payment/create` validates an integer photo count (3–30), calculates the advertised package price, stores the order and sets an HttpOnly owner cookie.
+2. Configure Robokassa's ResultURL as `https://YOUR_DOMAIN/api/payment/result`. The signed callback persists payment before responding `OK{InvId}`. Configure the merchant signature algorithm as MD5 and the standard success/failure addresses as `/studio?paid=true` and `/studio?paid=false`, using GET. Per-invoice `SuccessUrl2`/`FailUrl2` are included in the signature.
+3. `/api/payment/status` requires the order's owner cookie. In live mode, an unconfirmed order is checked through OpStateExt, including the exact merchant `OutSum`. Test mode requires a valid SuccessURL signature or a previously verified ResultURL. Browser-supplied amounts never grant credits.
+4. Payment access lasts 24 hours from the first confirmation, bounded by the order's seven-day lifetime. Rechecking a payment never resets expiry or spent attempts.
+5. Each distinct source photo can be processed twice (initial attempt + one retry). The number of distinct sources is limited by the order. Reservations are atomic across server instances. Provider errors/timeouts also consume an attempt because billing may already have occurred. Automatic SDK retries are disabled.
+
+The order must be resumed in the same browser. One pending checkout cookie is retained per browser. Already confirmed orders retain their separate paid cookie. Identical source files share the same two-attempt allowance. Sources/masks and results stay in browser IndexedDB; completed photos are restored without automatic regeneration. A new order can be started explicitly in the studio.
+
+## Production configuration
+
+Set `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `PAYMENT_TOKEN_SECRET`, `NEXT_PUBLIC_SITE_URL`, OpenAI and Robokassa credentials on **every** instance. Use a shared persistent Redis database with eviction disabled. Storage outages return errors and do not grant processing. The application deliberately refuses production checkout/processing without persistent storage.
+
+For a custom reverse proxy, set `TRUSTED_IP_HEADER` only if that proxy strips and replaces the header. Vercel's `x-vercel-forwarded-for` is selected automatically; otherwise checkout uses a shared rate bucket. Photo processing also has an order-based rate limit. Apply host-level connection/body limits appropriate to the deployment; a hosting provider may impose a lower upload limit than the application.
+
+Before replacing the old payment implementation, finish existing paid orders or arrange manual fulfilment: legacy MD5 paid cookies and invoices absent from the new store are intentionally rejected. Verify a complete Robokassa checkout/callback/return in the deployment environment before accepting new live payments. This repository's automated tests use mocked providers, not live payments.
+
+## Image API
+
+`POST /api/declutter` takes multipart form data and a valid `sa_paid` HttpOnly cookie:
+
+- `image`: JPEG/PNG, up to 50 MiB, maximum side 3000 px.
+- `mode`: `mask` (default) or `auto`.
+- `mask`: required for `mask`; PNG with alpha/transparency support, same dimensions, up to 4 MiB.
+- `output_format`: `png` (default), `jpeg`, `webp`.
+- `quality`: `high` (default), `medium`.
+
+The browser accepts JPEG/PNG/WebP/GIF and always re-encodes before upload, stripping metadata. WebP/GIF are converted to PNG; animated files produce a still image. The request body is bounded while streaming (54 MiB + 64 KiB, 30-second upload deadline), before multipart parsing. Images are forwarded with fixed filenames. Generated images and API responses use `Cache-Control: no-store`.
+
+## Checks
+
+```sh
+npm run typecheck
+npm test
 npm run build
+npm audit
+# Install a Playwright browser once, or use an existing Chrome:
+PLAYWRIGHT_CHANNEL=chrome npm run test:browser
 ```
 
-## API contract
+Browser tests run a local server with dummy credentials and intercept all payment/image requests. They never make real payments or invoke image generation. On machines without Chrome, run `npx playwright install chromium` then `npm run test:browser`.
 
-### `POST /api/declutter`
+Next.js Webpack builds fail when the checkout path contains `#` (as in this workspace's `####` directory). Development uses Turbopack. For a production build, use a checkout/copy in a path without `#`; do not disable tracing to work around it.
 
-`multipart/form-data`:
-
-- `image` (required): JPG/PNG
-- `mode` (optional): `mask|auto` (default: `mask`)
-- `mask` (required only for `mode=mask`): PNG with transparency
-- `output_format` (optional): `png|jpeg|webp` (default: `png`)
-- `quality` (optional): `high|medium` (default: `high`)
-
-Success:
-
-- Binary `image/*` response (`Content-Type` reflects `output_format`)
-
-Error:
-
-```json
-{
-  "error": {
-    "code": "STRING_CODE",
-    "message": "Human-readable message",
-    "request_id": "uuid"
-  }
-}
-```
-
-Notes:
-
-- In `mode=auto`, backend ignores `mask` if present.
-- Auto mode may repaint room details more aggressively than manual masked mode.
-
-## Deploy
-
-- Recommended: Vercel (Next.js default)
-- Set `OPENAI_API_KEY` in project environment variables
-- Keep API key server-only (never expose in client code)
+See [the security audit](docs/security-audit-2026-09-10.md) for findings, validation and rollout limits, and [data handling](docs/data-minimization.md).

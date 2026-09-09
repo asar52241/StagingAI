@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { readPendingPayment } from "@/lib/pendingPayment";
 
 /**
  * Монтируется на лендинге. Если в localStorage есть stagingai_pending
@@ -13,8 +14,8 @@ export function PendingPaymentRedirect() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (localStorage.getItem("stagingai_pending")) {
-      router.push("/studio?paid=true");
+    if (readPendingPayment()) {
+      router.replace("/studio?paid=true");
     }
   }, [router]);
 

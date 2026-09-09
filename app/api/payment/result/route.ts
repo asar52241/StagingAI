@@ -1,37 +1,35 @@
-/**
- * ResultURL для Робокассы — вызывается сервером Робокассы после успешной оплаты.
- * Должен вернуть строку "OK{InvId}" (без переноса строки).
- *
- * Настройте в личном кабинете Робокассы:
- *   ResultURL: https://your-domain.com/api/payment/result
- */
 import { NextRequest } from "next/server";
-import { verifyResultSignature } from "@/lib/robokassa";
+import { parseAmountCents, parseInvoiceId, verifyResultSignature } from "@/lib/robokassa";
+import { markOrderPaid } from "@/lib/orders";
+import { readLimitedBody, RequestError } from "@/lib/requestSecurity";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 async function handleResult(params: URLSearchParams) {
   const outSum = params.get("OutSum") ?? "";
-  const invId  = params.get("InvId")  ?? "";
-  const sig    = params.get("SignatureValue") ?? "";
-
-  if (!outSum || !invId || !sig) {
+  const invIdRaw = params.get("InvId") ?? "";
+  const invId = parseInvoiceId(invIdRaw);
+  const cents = parseAmountCents(outSum);
+  if (!invId || !cents || ["OutSum", "InvId", "SignatureValue"].some((key) => params.getAll(key).length !== 1)) {
     return new Response("bad request", { status: 400 });
   }
-
-  if (!verifyResultSignature(outSum, invId, sig)) {
-    return new Response("bad sign", { status: 400 });
-  }
-
-  return new Response(`OK${invId}`, { status: 200 });
+  if (!verifyResultSignature(outSum, invIdRaw, params.get("SignatureValue") ?? "")) return new Response("bad sign", { status: 400 });
+  // Persist before acknowledging: Robokassa can safely retry on storage/network errors.
+  if (!await markOrderPaid(invId, cents)) return new Response("unknown order or amount", { status: 400 });
+  return new Response(`OK${invId}`, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function GET(req: NextRequest) {
-  const params = req.nextUrl.searchParams;
-  return handleResult(params);
+  try { return await handleResult(req.nextUrl.searchParams); }
+  catch { return new Response("temporarily unavailable", { status: 503 }); }
 }
 
 export async function POST(req: NextRequest) {
-  const body   = await req.text();
-  const params = new URLSearchParams(body);
-
-  return handleResult(params);
+  try {
+    const body = new TextDecoder().decode(await readLimitedBody(req, 16 * 1024));
+    return await handleResult(new URLSearchParams(body));
+  } catch (error) {
+    return new Response("request failed", { status: error instanceof RequestError ? error.status : 503 });
+  }
 }

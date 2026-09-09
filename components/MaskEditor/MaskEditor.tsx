@@ -36,6 +36,22 @@ type Point = {
   y: number;
 };
 
+type MaskSnapshot = { width: number; height: number; alpha: Uint8ClampedArray };
+
+function readSnapshot(ctx: CanvasRenderingContext2D, width: number, height: number): MaskSnapshot {
+  const pixels = ctx.getImageData(0, 0, width, height).data;
+  const alpha = new Uint8ClampedArray(width * height);
+  for (let i = 0; i < alpha.length; i++) alpha[i] = pixels[i * 4 + 3];
+  return { width, height, alpha };
+}
+
+function restoreSnapshot(ctx: CanvasRenderingContext2D, snapshot: MaskSnapshot) {
+  const image = ctx.createImageData(snapshot.width, snapshot.height);
+  image.data.fill(255);
+  for (let i = 0; i < snapshot.alpha.length; i++) image.data[i * 4 + 3] = snapshot.alpha[i];
+  ctx.putImageData(image, 0, 0);
+}
+
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.25;
@@ -69,7 +85,8 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
   },
   ref,
 ) {
-  const MAX_HISTORY_SNAPSHOTS = 21; // Initial state + 20 actions (>= 10 undo steps).
+  const MAX_HISTORY_SNAPSHOTS = 21;
+  const MAX_HISTORY_BYTES = 96 * 1024 * 1024;
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -85,8 +102,8 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
   const [isDrawing, setIsDrawing] = useState(false);
   const [zoom, setZoom] = useState(1);
   const previousPointRef = useRef<Point | null>(null);
-  const historyRef = useRef<ImageData[]>([]);
-  const redoStackRef = useRef<ImageData[]>([]);
+  const historyRef = useRef<MaskSnapshot[]>([]);
+  const redoStackRef = useRef<MaskSnapshot[]>([]);
 
   const fitScale = dimensions && viewportSize.width > 0 && viewportSize.height > 0
     ? Math.min(
@@ -143,14 +160,16 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
     previewCtx.globalCompositeOperation = "source-over";
   }
 
-  function setHistory(nextHistory: ImageData[], clearRedo = true) {
-    const trimmed = nextHistory.slice(-MAX_HISTORY_SNAPSHOTS);
+  function setHistory(nextHistory: MaskSnapshot[], clearRedo = true) {
+    const snapshotBytes = nextHistory[0]?.alpha.byteLength ?? 1;
+    const limit = Math.max(2, Math.min(MAX_HISTORY_SNAPSHOTS, Math.floor(MAX_HISTORY_BYTES / snapshotBytes)));
+    const trimmed = nextHistory.slice(-limit);
     historyRef.current = trimmed;
     if (clearRedo) redoStackRef.current = [];
     onHistoryStateChange?.({ canUndo: trimmed.length > 1, canRedo: redoStackRef.current.length > 0 });
   }
 
-  function captureSnapshot(): ImageData | null {
+  function captureSnapshot(): MaskSnapshot | null {
     const canvas = maskCanvasRef.current;
     if (!canvas) {
       return null;
@@ -161,7 +180,7 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
       return null;
     }
 
-    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return readSnapshot(ctx, canvas.width, canvas.height);
   }
 
   function applyMaskPresetToCanvas(preset: MaskPreset) {
@@ -233,7 +252,7 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
 
         const nextHistory = historyRef.current.slice(0, -1);
         const previousSnapshot = nextHistory[nextHistory.length - 1];
-        ctx.putImageData(previousSnapshot, 0, 0);
+        restoreSnapshot(ctx, previousSnapshot);
         syncPreviewFromMask();
         setHistory(nextHistory, false);
         return true;
@@ -255,7 +274,7 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
 
         const stateToRestore = redoStackRef.current[redoStackRef.current.length - 1];
         redoStackRef.current = redoStackRef.current.slice(0, -1);
-        ctx.putImageData(stateToRestore, 0, 0);
+        restoreSnapshot(ctx, stateToRestore);
         syncPreviewFromMask();
         setHistory([...historyRef.current, stateToRestore], false);
         return true;
@@ -318,8 +337,11 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
 
     const objectUrl = URL.createObjectURL(imageFile);
     const image = new Image();
+    let cancelled = false;
+    let maskUrl: string | undefined;
 
     image.onload = () => {
+      if (cancelled) return;
       const width = image.naturalWidth;
       const height = image.naturalHeight;
       setDimensions({ width, height });
@@ -342,22 +364,24 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
 
       if (initialMaskFile) {
         // Restore previously saved mask instead of applying blank preset.
-        const maskUrl = URL.createObjectURL(initialMaskFile);
+        maskUrl = URL.createObjectURL(initialMaskFile);
         const maskImage = new Image();
         maskImage.onload = () => {
+          if (cancelled) return;
           maskCtx.clearRect(0, 0, width, height);
           maskCtx.globalCompositeOperation = "source-over";
           maskCtx.drawImage(maskImage, 0, 0, width, height);
           syncPreviewFromMask();
-          URL.revokeObjectURL(maskUrl);
-          const initialSnapshot = maskCtx.getImageData(0, 0, width, height);
+          if (maskUrl) URL.revokeObjectURL(maskUrl);
+          const initialSnapshot = readSnapshot(maskCtx, width, height);
           setHistory([initialSnapshot]);
         };
+        maskImage.onerror = () => { if (maskUrl) URL.revokeObjectURL(maskUrl); };
         maskImage.src = maskUrl;
       } else {
         // Mask baseline depends on active preset.
         applyMaskPresetToCanvas(maskPreset);
-        const initialSnapshot = maskCtx.getImageData(0, 0, width, height);
+        const initialSnapshot = readSnapshot(maskCtx, width, height);
         setHistory([initialSnapshot]);
       }
     };
@@ -365,7 +389,9 @@ const MaskEditor = forwardRef<MaskEditorHandle, MaskEditorProps>(function MaskEd
     image.src = objectUrl;
 
     return () => {
+      cancelled = true;
       URL.revokeObjectURL(objectUrl);
+      if (maskUrl) URL.revokeObjectURL(maskUrl);
     };
   }, [imageFile, initialMaskFile, maskPreset]);
 

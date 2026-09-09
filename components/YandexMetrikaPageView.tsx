@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { analyticsUrl } from "@/lib/analyticsUrl";
 
 const YANDEX_METRIKA_ID = 107727165;
 
@@ -21,7 +22,7 @@ export function YandexMetrikaPageView() {
   const lastTrackedUrl = useRef<string | null>(null);
 
   useEffect(() => {
-    const currentUrl = `${window.location.origin}${pathname}${search ? `?${search}` : ""}`;
+    const currentUrl = analyticsUrl(`${window.location.origin}${pathname}${search ? `?${search}` : ""}`);
 
     if (isFirstPageView.current) {
       isFirstPageView.current = false;
@@ -34,7 +35,7 @@ export function YandexMetrikaPageView() {
     }
 
     window.ym(YANDEX_METRIKA_ID, "hit", currentUrl, {
-      referer: lastTrackedUrl.current ?? document.referrer,
+      referer: lastTrackedUrl.current ?? analyticsUrl(document.referrer),
       title: document.title,
     });
 

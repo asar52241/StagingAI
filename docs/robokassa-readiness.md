@@ -1,5 +1,7 @@
 # Robokassa Readiness Report — StagingAI
 
+> Исторический отчёт. Актуальная реализация платежей, обязательные настройки и условия перехода описаны в [README](../README.md) и [аудите безопасности](security-audit-2026-09-10.md).
+
 **Дата составления:** 27.02.2025
 **Стек:** Next.js 14 (App Router) · React 18 · TypeScript · Tailwind CSS
 **Домен (TODO):** Задайте в `NEXT_PUBLIC_SITE_URL` в `.env.local`
