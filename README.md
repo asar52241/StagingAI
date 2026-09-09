@@ -14,7 +14,7 @@ npm run dev
 
 Fill in the OpenAI key, Robokassa credentials and `PAYMENT_TOKEN_SECRET` (random, at least 32 characters). Generate a secret with `openssl rand -hex 32`. Never commit `.env.local`. For local payment return URLs, set `NEXT_PUBLIC_SITE_URL=http://localhost:3000`.
 
-When `ROBOKASSA_TEST=true`, **separate** test passwords are required; production passwords are never used as a fallback. Local development uses an in-memory order store unless Redis is configured. Restarting it invalidates local orders. Test payments still invoke the paid image provider when using the application manually.
+When `ROBOKASSA_TEST=true`, **separate** test passwords are required; production passwords are never used as a fallback. Local development uses an in-memory order store unless `DATABASE_URL` is configured. Restarting it invalidates local orders. Use a separate Neon database/branch for local development. Test payments still invoke the paid image provider when using the application manually.
 
 ## Payment and processing
 
@@ -28,7 +28,18 @@ The order must be resumed in the same browser. One pending checkout cookie is re
 
 ## Production configuration
 
-Set `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `PAYMENT_TOKEN_SECRET`, `NEXT_PUBLIC_SITE_URL`, OpenAI and Robokassa credentials on **every** instance. Use a shared persistent Redis database with eviction disabled. Storage outages return errors and do not grant processing. The application deliberately refuses production checkout/processing without persistent storage.
+Set `DATABASE_URL`, `PAYMENT_TOKEN_SECRET`, `NEXT_PUBLIC_SITE_URL`, OpenAI and Robokassa credentials on **every** instance. Orders and rate limits use persistent PostgreSQL through the Neon HTTPS driver. Redis is no longer required. `POSTGRES_URL` is accepted as a fallback name when `DATABASE_URL` is empty. Storage outages return errors and do not grant processing. The application deliberately refuses production checkout/processing without persistent storage.
+
+### Connect Neon on Vercel
+
+1. Connect the Neon integration to the StagingAI Vercel project for **Production**, with the custom prefix `DATABASE` (the resulting connection variable is `DATABASE_URL`). Leave database branching for production deployments disabled so deployments share paid orders. Use separate databases/branches and test payment credentials for Preview/Development.
+2. Confirm that `DATABASE_URL` contains the pooled PostgreSQL connection string in Vercel's server-side environment variables. Do not use a `NEXT_PUBLIC_` prefix. The additional `PG*` variables and unpooled URL are not needed by this application.
+3. Before deploying, run `npm run db:setup` in an environment containing that `DATABASE_URL`, or execute [db/001_order_store.sql](db/001_order_store.sql) in Neon's SQL Editor. The command also reads Next.js local env files. It creates only the application's `public.stagingai_records` table and expiry index and can be re-run without clearing data. The demo `comments` table/form shown by the integration is not used.
+4. Deploy the updated application. Confirm checkout, signed callback and owner-only recovery in the deployed environment.
+
+Updates use conditional SQL writes, preserving quota under concurrent Vercel invocations. Expired records are immediately treated as absent. During writes, each active instance deletes up to 1,000 expired records at most once per minute; physical deletion therefore happens during subsequent traffic, not exactly at expiry. No images are stored in PostgreSQL.
+
+If a database password was shared in a chat or screenshot, rotate it using **Neon → Connect → Reset password**, confirm the updated connection credentials in Vercel, then deploy. See [Vercel's rotation instructions](https://vercel.com/kb/guide/how-to-reset-a-secret-for-a-neon-integration). A reset immediately invalidates the old credentials.
 
 For a custom reverse proxy, set `TRUSTED_IP_HEADER` only if that proxy strips and replaces the header. Vercel's `x-vercel-forwarded-for` is selected automatically; otherwise checkout uses a shared rate bucket. Photo processing also has an order-based rate limit. Apply host-level connection/body limits appropriate to the deployment; a hosting provider may impose a lower upload limit than the application.
 
@@ -57,7 +68,7 @@ npm audit
 PLAYWRIGHT_CHANNEL=chrome npm run test:browser
 ```
 
-Browser tests run a local server with dummy credentials and intercept all payment/image requests. They never make real payments or invoke image generation. On machines without Chrome, run `npx playwright install chromium` then `npm run test:browser`.
+Unit tests clear database credentials before loading application modules. PostgreSQL tests run the real migration and storage queries against an isolated in-memory PostgreSQL engine (PGlite); they do not use Neon or make payments. Browser tests run a local server with dummy credentials and intercept all payment/image requests. They never make real payments or invoke image generation. On machines without Chrome, run `npx playwright install chromium` then `npm run test:browser`.
 
 Next.js Webpack builds fail when the checkout path contains `#` (as in this workspace's `####` directory). Development uses Turbopack. For a production build, use a checkout/copy in a path without `#`; do not disable tracing to work around it.
 

@@ -11,4 +11,4 @@ Object.assign(process.env, {
   OPENAI_API_KEY: "test-only-not-a-real-key",
   NEXT_PUBLIC_SITE_URL: "https://staging-ai.test",
 });
-for (const key of ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "TRUSTED_IP_HEADER", "VERCEL"]) delete process.env[key];
+for (const key of ["DATABASE_URL", "POSTGRES_URL", "TRUSTED_IP_HEADER", "VERCEL"]) delete process.env[key];

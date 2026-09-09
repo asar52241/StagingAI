@@ -11,11 +11,13 @@
     "dev": "next dev --turbo",
     "build": "next build",
     "start": "next start",
+    "db:setup": "node scripts/db-setup.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --import ./tests/setup.mjs --import tsx --test --test-concurrency=1 tests/*.test.ts",
     "test:browser": "playwright test"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-slot": "^1.2.4",
@@ -30,6 +32,7 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@playwright/test": "^1.63.0",
     "@types/node": "^20.16.5",
     "@types/react": "^18.3.5",

@@ -3,7 +3,8 @@ import { beforeEach, test } from "node:test";
 import { createHash } from "node:crypto";
 import { NextRequest } from "next/server";
 import OpenAI from "openai";
-import { MemoryStore, RedisStore, getServerStore } from "../lib/serverStore";
+import { MemoryStore, getServerStore } from "../lib/serverStore";
+import { createPostgresQuery, PostgresStore } from "../lib/postgresStore";
 import { createOrder, finishProcessing, getOrder, markOrderPaid, reserveProcessing } from "../lib/orders";
 import { assertPaymentConfiguration, parseAmountCents, parseInvoiceId, signOrderToken, verifyOrderToken, verifySuccessSignature } from "../lib/robokassa";
 import { clientAddress, rateLimit, readCookie, readLimitedBody, requireSameOrigin, RequestError } from "../lib/requestSecurity";
@@ -104,9 +105,9 @@ test("production cannot silently fall back to memory storage", () => {
   try { assert.throws(getServerStore, /Persistent order storage/); }
   finally { Object.assign(process.env, { NODE_ENV: previous }); }
 });
-test("Redis failures reject instead of creating a fresh memory quota", async (t) => {
+test("PostgreSQL failures reject instead of creating a fresh memory quota", async (t) => {
   t.mock.method(globalThis, "fetch", async () => new Response("unavailable", { status: 503 }));
-  await assert.rejects(new RedisStore("https://redis.test", "test").get("order"));
+  await assert.rejects(new PostgresStore(createPostgresQuery("postgresql://test:test@ep-test.us-east-1.aws.neon.tech/test")).get("order"), /Order storage unavailable/);
 });
 test("parallel source photos cannot overdraw paid quota", async () => {
   const order = await paidOrder();
