@@ -125,6 +125,53 @@ test("cancelled checkout without InvId restores uploaded photos", async ({ page 
   await expect(page.getByRole("button", { name: "Оплатить 150 ₽ и запустить" })).toBeEnabled();
 });
 
+test("checkout distinguishes server and network errors and allows another attempt", async ({ page }) => {
+  await page.goto("/studio");
+  const [file] = await images(page);
+  await page.locator('input[type="file"]').first().setInputFiles(file);
+  const cases = [
+    { status: 403, message: "Не удалось начать оплату на этом адресе сайта. Обратитесь в поддержку." },
+    { status: 503, message: "Сервис оплаты временно недоступен. Попробуйте позже или обратитесь в поддержку." },
+    { status: 429, message: "Слишком много попыток оплаты. Подождите минуту и попробуйте ещё раз." },
+    { status: 0, message: "Не удалось связаться с сервисом оплаты. Проверьте соединение и попробуйте ещё раз." },
+  ];
+  let attempt = 0;
+  await page.route("**/api/payment/create", async (route) => {
+    const sample = cases[attempt++];
+    if (!sample.status) return route.abort("internetdisconnected");
+    await route.fulfill({ status: sample.status, json: { error: "Internal details must not be displayed" } });
+  });
+  const pay = page.getByRole("button", { name: "Оплатить 50 ₽ и запустить" });
+  for (const sample of cases) {
+    await pay.click();
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: /Подтвердить/ }).click();
+    await expect(page.getByText(sample.message, { exact: true })).toBeVisible();
+    await expect(pay).toBeEnabled();
+    await expect(page).toHaveURL(/\/studio$/);
+  }
+  expect(attempt).toBe(cases.length);
+});
+
+test("checkout explains browser storage failure before redirecting", async ({ page }) => {
+  await page.goto("/studio");
+  const [file] = await images(page);
+  await page.locator('input[type="file"]').first().setInputFiles(file);
+  await page.route("**/api/payment/create", (route) => route.fulfill({ json: {
+    invId: 125, outSum: 50, paymentUrl: "http://127.0.0.1:3310/studio?paid=false",
+  } }));
+  await page.evaluate(() => {
+    indexedDB.open = () => { throw new DOMException("Storage blocked", "SecurityError"); };
+  });
+  const pay = page.getByRole("button", { name: "Оплатить 50 ₽ и запустить" });
+  await pay.click();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: /Подтвердить/ }).click();
+  await expect(page.getByText("Не удалось сохранить фотографии в браузере. Проверьте свободное место и разрешение на хранение данных сайта.", { exact: true })).toBeVisible();
+  await expect(pay).toBeEnabled();
+  await expect(page).toHaveURL(/\/studio$/);
+});
+
 test("advertised package price matches studio checkout total", async ({ page }) => {
   await page.goto("/");
   await page.locator('input[type="number"]').fill("10");

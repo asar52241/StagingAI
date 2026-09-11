@@ -68,6 +68,31 @@ test("missing payment secrets fail closed", () => {
   delete process.env.ROBOKASSA_TEST_PASSWORD2;
   try { assert.throws(assertPaymentConfiguration); } finally { process.env.ROBOKASSA_TEST_PASSWORD2 = secret; }
 });
+test("checkout reports the configuration stage without exposing secrets", async (t) => {
+  const secret = process.env.PAYMENT_TOKEN_SECRET;
+  const logs = t.mock.method(console, "error", () => {});
+  delete process.env.PAYMENT_TOKEN_SECRET;
+  try {
+    const response = await createPayment(jsonRequest('{"photoCount":1}'));
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: "Payment service unavailable" });
+    assert.deepEqual(logs.mock.calls.map((call) => call.arguments), [
+      ["Payment creation failed", { stage: "payment_configuration" }],
+    ]);
+  } finally { process.env.PAYMENT_TOKEN_SECRET = secret; }
+});
+test("checkout reports storage failures without logging database credentials", async (t) => {
+  const logs = t.mock.method(console, "error", () => {});
+  t.mock.method(globals.stagingStore!, "get", async () => {
+    throw new Error("Database failed: postgresql://private-user:private-password@database/orders");
+  });
+  const response = await createPayment(jsonRequest('{"photoCount":1}'));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "Payment service unavailable" });
+  assert.deepEqual(logs.mock.calls.map((call) => call.arguments), [
+    ["Payment creation failed", { stage: "rate_limit_storage" }],
+  ]);
+});
 test("malformed percent encoding in cookies never crashes", () => {
   assert.equal(readCookie(new Request("https://staging-ai.test", { headers: { cookie: "sa_paid=%ZZ" } }), "sa_paid"), null);
 });

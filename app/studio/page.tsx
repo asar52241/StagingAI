@@ -657,6 +657,7 @@ export default function StudioPage() {
       totalPrice,
       mode,
     });
+    let failureMessage = "Не удалось связаться с сервисом оплаты. Проверьте соединение и попробуйте ещё раз.";
     try {
       // 1. Создаём платёж на сервере
       const res = await fetch("/api/payment/create", {
@@ -664,10 +665,19 @@ export default function StudioPage() {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ photoCount: toProcess.length }),
       });
-      if (!res.ok) throw new Error("payment create failed");
+      if (!res.ok) {
+        failureMessage = res.status === 403
+          ? "Не удалось начать оплату на этом адресе сайта. Обратитесь в поддержку."
+          : res.status === 429
+            ? "Слишком много попыток оплаты. Подождите минуту и попробуйте ещё раз."
+            : "Сервис оплаты временно недоступен. Попробуйте позже или обратитесь в поддержку.";
+        throw new Error("payment create failed");
+      }
+      failureMessage = "Не удалось получить ссылку на оплату. Попробуйте ещё раз или обратитесь в поддержку.";
       const { paymentUrl, invId, outSum } = (await res.json()) as { paymentUrl: string; invId: number; outSum: number };
 
       // 2. Сохраняем фото в IndexedDB (переживут редирект)
+      failureMessage = "Не удалось сохранить фотографии в браузере. Проверьте свободное место и разрешение на хранение данных сайта.";
       await saveOrder({
         invId,
         mode,
@@ -692,6 +702,7 @@ export default function StudioPage() {
       );
 
       // 4. Редиректим на Робокассу
+      failureMessage = "Не удалось открыть страницу оплаты. Попробуйте ещё раз или обратитесь в поддержку.";
       trackMetrikaGoal("payment_redirected", {
         invId,
         photoCount: toProcess.length,
@@ -703,7 +714,7 @@ export default function StudioPage() {
       checkoutLockedRef.current = false;
       setIsCreatingPayment(false);
       setShowConsentModal(false);
-      setPaymentError("Не удалось создать платёж. Проверьте соединение и попробуйте ещё раз.");
+      setPaymentError(failureMessage);
     }
   };
 

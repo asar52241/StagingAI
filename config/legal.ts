@@ -11,8 +11,8 @@ export const LEGAL = {
   brandName: "StagingAI",
 
   // ── URL сайта ─────────────────────────────────────────────────────────────
-  // TODO: Замените на реальный домен или задайте NEXT_PUBLIC_SITE_URL в .env.local
-  siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "https://staging-ai.ru",
+  // Production origin; override when moving the site to a custom domain.
+  siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? "https://staging-ai-gamma.vercel.app",
 
   // ── Реквизиты самозанятого ─────────────────────────────────────────────────
   sellerType: "Самозанятый",

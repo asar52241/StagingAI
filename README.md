@@ -28,6 +28,8 @@ The order must be resumed in the same browser. One pending checkout cookie is re
 
 ## Production configuration
 
+The current production origin is `https://staging-ai-gamma.vercel.app`. Set `NEXT_PUBLIC_SITE_URL` to that exact origin in Vercel Production, then rebuild/redeploy: Next.js freezes this value at build time. Checkout rejects browser requests from any other origin. When moving to a custom domain, update this variable and Robokassa's callback/return URLs together.
+
 Set `DATABASE_URL`, `PAYMENT_TOKEN_SECRET`, `NEXT_PUBLIC_SITE_URL`, OpenAI and Robokassa credentials on **every** instance. Orders and rate limits use persistent PostgreSQL through the Neon HTTPS driver. Redis is no longer required. `POSTGRES_URL` is accepted as a fallback name when `DATABASE_URL` is empty. Storage outages return errors and do not grant processing. The application deliberately refuses production checkout/processing without persistent storage.
 
 ### Connect Neon on Vercel
