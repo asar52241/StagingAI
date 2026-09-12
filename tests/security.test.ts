@@ -187,7 +187,7 @@ test("checkout uses configured origin and the merchant's verified signature form
   const url = new URL(data.paymentUrl);
   assert.equal(url.searchParams.get("SuccessURL"), "https://staging-ai.test/studio?paid=true");
   const params = url.searchParams;
-  const base = `test-merchant:150.00:${data.invId}:test-password-1`;
+  const base = `test-merchant:150.00:${data.invId}:${params.get("Receipt")}:test-password-1`;
   assert.equal(params.get("SignatureValue"), md5(base));
   assert.equal(JSON.parse(params.get("Receipt") ?? "").items[0].sum, 150);
   assert.match(response.headers.get("set-cookie") ?? "", /HttpOnly/);

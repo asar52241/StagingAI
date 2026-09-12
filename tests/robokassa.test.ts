@@ -5,12 +5,12 @@ import { buildPaymentUrl, signOrderToken, verifyOrderToken, verifyResultSignatur
 
 const md5 = (value: string) => createHash("md5").update(value, "utf8").digest("hex");
 
-test("merchant signature omits Receipt and receipt/return URLs are encoded once", () => {
+test("merchant signature includes the received Receipt and URLs are encoded once", () => {
   const receipt = { items: [{ name: "Обработка фото & уборка", quantity: 1, sum: 50, tax: "none" }] };
   const url = new URL(buildPaymentUrl(50, 123, "Обработка 1 фото", receipt, "https://staging-ai.test"));
   assert.equal(url.searchParams.get("IsTest"), "1");
   assert.deepEqual(JSON.parse(url.searchParams.get("Receipt") ?? ""), receipt);
-  assert.equal(url.searchParams.get("SignatureValue"), md5(`test-merchant:50.00:123:${process.env.ROBOKASSA_TEST_PASSWORD1}`));
+  assert.equal(url.searchParams.get("SignatureValue"), md5(`test-merchant:50.00:123:${url.searchParams.get("Receipt")}:${process.env.ROBOKASSA_TEST_PASSWORD1}`));
   assert.equal(url.searchParams.get("SuccessURL"), "https://staging-ai.test/studio?paid=true");
   assert.equal(url.searchParams.get("FailURL"), "https://staging-ai.test/studio?paid=false");
 });

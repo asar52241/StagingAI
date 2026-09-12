@@ -54,12 +54,13 @@ export function generateInvId(): number {
 export function buildPaymentUrl(outSum: number, invId: number, description: string, receipt: object, origin: string): string {
   const login = required("ROBOKASSA_LOGIN");
   const amount = outSum.toFixed(2);
-  const receiptEncoded = encodeURIComponent(JSON.stringify(receipt));
+  const receiptJson = JSON.stringify(receipt);
+  const receiptEncoded = encodeURIComponent(receiptJson);
   const success = `${origin}/studio?paid=true`;
   const failure = `${origin}/studio?paid=false`;
-  // Preserve this merchant's verified signature format (see docs/robokassa-receipt-issue.md).
-  // Including Receipt caused error 29 in the deployed integration.
-  const signature = md5(`${login}:${amount}:${invId}:${password(1)}`);
+  // Sign the Receipt value Robokassa receives after decoding the query once.
+  // Signing the percent-encoded text but sending it encoded only once causes error 29.
+  const signature = md5(`${login}:${amount}:${invId}:${receiptJson}:${password(1)}`);
   const params = new URLSearchParams({
     MerchantLogin: login, OutSum: amount, InvId: String(invId), Description: description,
     SignatureValue: signature, IsTest: IS_TEST ? "1" : "0", Culture: "ru", Encoding: "utf-8",
